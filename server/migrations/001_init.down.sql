@@ -1,0 +1,25 @@
+-- Reverses 001_init. Destructive on a populated database: requires explicit operator authorization (Master Prompt A5).
+DROP TABLE IF EXISTS audit_log;
+DROP TABLE IF EXISTS announcements;
+DROP TABLE IF EXISTS goals;
+DROP TABLE IF EXISTS user_achievements;
+DROP TABLE IF EXISTS points_ledger;
+DROP TABLE IF EXISTS notifications;
+DROP TABLE IF EXISTS messages;
+DROP TABLE IF EXISTS channel_members;
+DROP TABLE IF EXISTS channels;
+DROP TABLE IF EXISTS activities;
+DROP TABLE IF EXISTS event_attendees;
+DROP TABLE IF EXISTS events;
+DROP TABLE IF EXISTS tasks;
+DROP TABLE IF EXISTS deal_stage_history;
+DROP TABLE IF EXISTS deals;
+DROP TABLE IF EXISTS properties;
+DROP TABLE IF EXISTS lead_assignments;
+DROP TABLE IF EXISTS lead_status_history;
+DROP TABLE IF EXISTS leads;
+DROP TABLE IF EXISTS contacts;
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS teams;
+DROP TABLE IF EXISTS tenants;

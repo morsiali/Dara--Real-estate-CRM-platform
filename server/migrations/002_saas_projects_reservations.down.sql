@@ -1,0 +1,20 @@
+-- Reverses 002. Destructive on populated data: requires explicit operator authorization (A5).
+DROP TABLE IF EXISTS reservations;
+DROP INDEX IF EXISTS ix_properties_project;
+ALTER TABLE properties DROP COLUMN permit_expiry;
+ALTER TABLE properties DROP COLUMN project_id;
+DROP TABLE IF EXISTS projects;
+ALTER TABLE users DROP COLUMN brn_expiry;
+ALTER TABLE users DROP COLUMN brn;
+ALTER TABLE users DROP COLUMN platform_admin;
+DROP INDEX IF EXISTS ux_users_email_global;
+CREATE UNIQUE INDEX ux_users_email ON users(tenant_id, lower(email));
+DROP INDEX IF EXISTS ux_tenants_slug;
+ALTER TABLE tenants DROP COLUMN orn;
+ALTER TABLE tenants DROP COLUMN trade_licence_expiry;
+ALTER TABLE tenants DROP COLUMN trade_licence_no;
+ALTER TABLE tenants DROP COLUMN is_platform;
+ALTER TABLE tenants DROP COLUMN trial_ends_at;
+ALTER TABLE tenants DROP COLUMN status;
+ALTER TABLE tenants DROP COLUMN plan;
+ALTER TABLE tenants DROP COLUMN slug;
