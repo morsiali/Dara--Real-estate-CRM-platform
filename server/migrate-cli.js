@@ -1,21 +1,14 @@
-// `npm run migrate:up` / `npm run migrate:down` against DB_FILE (default ./data/dara.db).
+// `npm run migrate:up` / `npm run migrate:down -- --yes` against DATABASE_URL (Postgres) or DB_FILE (SQLite).
 import { resolve } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { migrateUp, migrateDown } from './db.js';
+import { openDb } from './db.js';
 
-const file = resolve(process.env.DB_FILE || './data/dara.db');
-mkdirSync(dirname(file), { recursive: true });
-const db = new DatabaseSync(file);
 const dir = process.argv[2];
-if (dir === 'down') {
-  if (!process.argv.includes('--yes')) {
-    console.error('migrate:down drops tables and deletes data. Re-run with: npm run migrate:down -- --yes');
-    process.exit(1);
-  }
-  console.log('Rolled back:', migrateDown(db) ?? '(nothing to roll back)');
-} else {
-  console.log('Applied:', migrateUp(db).join(', ') || '(already up to date)');
+if (dir === 'down' && !process.argv.includes('--yes')) {
+  console.error('migrate:down drops tables and deletes data. Re-run with: npm run migrate:down -- --yes');
+  process.exit(1);
 }
-db.close();
+// openDb applies pending migrations on open, so "up" is just opening the database.
+const db = process.env.DATABASE_URL ? await openDb({ url: process.env.DATABASE_URL }) : await openDb({ file: resolve(process.env.DB_FILE || './data/dara.db') });
+if (dir === 'down') console.log('Rolled back:', (await db.migrateDown()) ?? '(nothing to roll back)');
+else console.log('Database is up to date.');
+await db.close();

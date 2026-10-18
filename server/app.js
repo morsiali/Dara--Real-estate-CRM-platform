@@ -6,7 +6,8 @@ import { Router, HttpError, readJson, sendJson, sendError, serveStatic, parseCoo
 import { SESSION_COOKIE, sessionUser, LoginThrottle } from './auth.js';
 import { RealtimeHub } from './services/realtime.js';
 import { uuidv7, nowIso } from './db.js';
-import { registerAuth } from './routes/auth.js';
+import { registerAuth, mfaSetupPending } from './routes/auth.js';
+import { createOutbox } from './services/mailer.js';
 import { registerCrm } from './routes/crm.js';
 import { registerWork } from './routes/work.js';
 import { registerChat } from './routes/chat.js';
@@ -19,16 +20,17 @@ import { accessMode } from './services/billing.js';
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
 export function createApp(db, config = {}) {
-  const cfg = { sessionTtlHours: 168, secureCookies: false, ...config };
+  const cfg = { sessionTtlHours: 168, secureCookies: false, publicUrl: 'http://localhost:4310', devLinks: false, ...config };
+  if (!cfg.mailer) cfg.mailer = createOutbox(null);
   const hub = new RealtimeHub();
   const router = new Router();
   const ctx = { db, hub, cfg, throttle: new LoginThrottle() };
 
   /** Posts a system message into a channel and pushes it to members. */
-  ctx.postSystemMessage = (channelId, body) => {
+  ctx.postSystemMessage = async (channelId, body) => {
     const msg = { id: uuidv7(), channel_id: channelId, user_id: null, kind: 'system', body, created_at: nowIso() };
-    db.run('INSERT INTO messages(id, channel_id, user_id, kind, body, created_at) VALUES (?,?,?,?,?,?)', msg.id, channelId, null, 'system', body, msg.created_at);
-    const members = db.all('SELECT user_id FROM channel_members WHERE channel_id = ?', channelId).map((r) => r.user_id);
+    await db.run('INSERT INTO messages(id, channel_id, user_id, kind, body, created_at) VALUES (?,?,?,?,?,?)', msg.id, channelId, null, 'system', body, msg.created_at);
+    const members = (await db.all('SELECT user_id FROM channel_members WHERE channel_id = ?', channelId)).map((r) => r.user_id);
     hub.sendMany(members, 'message', msg);
     return msg;
   };
@@ -41,11 +43,12 @@ export function createApp(db, config = {}) {
   registerAdmin(router, ctx);
   registerSaas(router, ctx);
   registerInventory(router, ctx);
-  ctx.sweep = () => { sweepReservations(ctx); sweepCompliance(ctx); };
-  ctx.sweepReservations = () => sweepReservations(ctx);
+  // Background jobs are cross-tenant system work.
+  ctx.sweep = () => db.withContext({ system: true }, async () => (await sweepReservations(ctx)) + (await sweepCompliance(ctx)));
+  ctx.sweepReservations = () => db.withContext({ system: true }, () => sweepReservations(ctx));
 
   router.get('/api/health', () => ({ ok: true, time: nowIso() }), { public: true });
-  router.get('/api/stream', (req, _ctx, res) => { hub.connect(req.user, req.raw, res); return undefined; }, { stream: true });
+  router.get('/api/stream', async (req, _ctx, res) => { hub.connect(req.user, req.raw, res); return undefined; }, { stream: true });
 
   async function handle(req, res) {
     const url = new URL(req.url, 'http://localhost');
@@ -66,26 +69,35 @@ export function createApp(db, config = {}) {
       if (req.method !== 'GET' && req.headers['x-requested-with'] !== 'dara') {
         throw new HttpError(403, 'CSRF_REJECTED', 'Missing request header. Reload the page and try again.');
       }
+      const body = ['POST', 'PATCH', 'PUT'].includes(req.method) ? await readJson(req) : {};
       const cookies = parseCookies(req.headers.cookie);
-      const user = sessionUser(db, cookies[SESSION_COOKIE]);
+      // Session lookup happens before the tenant is known, so it is system work (RLS bypass) — nothing else is.
+      const { user, tenant } = await db.withContext({ system: true }, async () => {
+        const u = await sessionUser(db, cookies[SESSION_COOKIE]);
+        if (!u) return { user: null, tenant: null };
+        await db.run('UPDATE users SET last_seen_at = ? WHERE id = ?', nowIso(), u.id);
+        return { user: u, tenant: await db.get('SELECT * FROM tenants WHERE id = ?', u.tenant_id) };
+      });
       if (!route.opts.public && !user) throw new HttpError(401, 'UNAUTHENTICATED', 'Sign in to continue.');
-      let tenant = null;
       if (user) {
-        db.run('UPDATE users SET last_seen_at = ? WHERE id = ?', nowIso(), user.id);
-        tenant = db.get('SELECT * FROM tenants WHERE id = ?', user.tenant_id);
         // Platform staff manage workspaces; they never act inside a brokerage's data.
         if (user.platform_admin && !/^\/api\/(platform|auth|stream|notifications|health)/.test(pathname)) {
           throw new HttpError(403, 'PLATFORM_ACCOUNT', 'Platform accounts manage workspaces from the platform console.');
+        }
+        // C13: administrators in workspaces that require two-step sign-in must finish setting it up first.
+        if (mfaSetupPending(user, tenant) && !/^\/api\/(auth|stream|health)/.test(pathname)) {
+          throw new HttpError(403, 'MFA_SETUP_REQUIRED', 'Set up two-step sign-in to continue. Your workspace requires it for administrators.');
         }
         // Part F3: suspended, cancelled or expired-trial workspaces stay readable and exportable, but read-only.
         if (req.method !== 'GET' && !route.opts.allowReadOnly && accessMode(tenant) === 'read_only') {
           throw new HttpError(403, 'WORKSPACE_READ_ONLY', 'This workspace is read-only because its subscription is not active. Your data is safe and can be exported.');
         }
       }
-      const body = ['POST', 'PATCH', 'PUT'].includes(req.method) ? await readJson(req) : {};
       const r = { user, tenant, params, query: Object.fromEntries(url.searchParams), body, cookies, ip: req.socket.remoteAddress, raw: req };
-      if (route.opts.stream) return route.handler(r, ctx, res);
-      const result = await route.handler(r, ctx, res);
+      if (route.opts.stream) return route.handler(r, ctx, res); // long-lived: never hold a DB transaction open
+      // One transaction per request, scoped to the caller's tenant (Postgres sets app.tenant_id for RLS).
+      // `system` is reserved for explicitly marked routes (sign-in, signup, platform console) and anonymous calls.
+      const result = await db.withContext({ tenantId: user?.tenant_id ?? null, system: !!route.opts.system || !user }, () => route.handler(r, ctx, res));
       if (res.headersSent) return;
       if (result && result.__status) return sendJson(res, result.__status, result.body, result.headers);
       sendJson(res, 200, result ?? { ok: true });

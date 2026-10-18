@@ -45,14 +45,14 @@ export function periodRange(period, tzOffsetMin = 240, now = new Date(), offset 
 const inList = (ids) => ids.map(() => '?').join(',') || "''";
 
 /** KPI block for a set of users within [start, end). */
-export function metrics(db, userIds, range) {
+export async function metrics(db, userIds, range) {
   if (!userIds.length) userIds = ['__none__'];
   const L = inList(userIds); const { start, end } = range;
-  const n = (sql, ...p) => db.get(sql, ...userIds, start, end, ...p)?.n ?? 0;
-  const wonRows = db.all(`SELECT value, commission_bp FROM deals WHERE owner_id IN (${L}) AND stage = 'won' AND closed_at >= ? AND closed_at < ? AND currency = 'AED'`, ...userIds, start, end);
-  const closedLost = n(`SELECT COUNT(*) n FROM deals WHERE owner_id IN (${L}) AND stage = 'lost' AND closed_at >= ? AND closed_at < ?`);
-  const evRows = db.all(`SELECT e.type, e.status, e.start_at, e.end_at FROM events e WHERE e.organizer_id IN (${L}) AND e.start_at >= ? AND e.start_at < ?`, ...userIds, start, end);
-  const tasksDue = db.all(`SELECT status, due_at, submitted_at FROM tasks WHERE assignee_id IN (${L}) AND approved_at >= ? AND approved_at < ?`, ...userIds, start, end);
+  const n = async (sql, ...p) => (await db.get(sql, ...userIds, start, end, ...p))?.n ?? 0;
+  const wonRows = await db.all(`SELECT value, commission_bp FROM deals WHERE owner_id IN (${L}) AND stage = 'won' AND closed_at >= ? AND closed_at < ? AND currency = 'AED'`, ...userIds, start, end);
+  const closedLost = await n(`SELECT COUNT(*) n FROM deals WHERE owner_id IN (${L}) AND stage = 'lost' AND closed_at >= ? AND closed_at < ?`);
+  const evRows = await db.all(`SELECT e.type, e.status, e.start_at, e.end_at FROM events e WHERE e.organizer_id IN (${L}) AND e.start_at >= ? AND e.start_at < ?`, ...userIds, start, end);
+  const tasksDue = await db.all(`SELECT status, due_at, submitted_at FROM tasks WHERE assignee_id IN (${L}) AND approved_at >= ? AND approved_at < ?`, ...userIds, start, end);
   const heldTypes = { viewing: 0, meeting: 0, call: 0 };
   let meetingMinutes = 0, noShow = 0, scheduledPast = 0;
   for (const e of evRows) {
@@ -68,9 +68,9 @@ export function metrics(db, userIds, range) {
   const commissionWon = wonRows.reduce((s, r) => s + commission(r.value, r.commission_bp), 0);
   const onTime = tasksDue.filter((t) => t.due_at && t.submitted_at && t.submitted_at <= t.due_at).length;
   return {
-    leads_new: n(`SELECT COUNT(*) n FROM leads WHERE owner_id IN (${L}) AND created_at >= ? AND created_at < ?`),
-    leads_qualified: n(`SELECT COUNT(DISTINCT lead_id) n FROM lead_status_history WHERE owner_id IN (${L}) AND at >= ? AND at < ? AND to_status = 'qualified'`),
-    deals_opened: n(`SELECT COUNT(*) n FROM deals WHERE owner_id IN (${L}) AND created_at >= ? AND created_at < ?`),
+    leads_new: await n(`SELECT COUNT(*) n FROM leads WHERE owner_id IN (${L}) AND created_at >= ? AND created_at < ?`),
+    leads_qualified: await n(`SELECT COUNT(DISTINCT lead_id) n FROM lead_status_history WHERE owner_id IN (${L}) AND at >= ? AND at < ? AND to_status = 'qualified'`),
+    deals_opened: await n(`SELECT COUNT(*) n FROM deals WHERE owner_id IN (${L}) AND created_at >= ? AND created_at < ?`),
     deals_won: won,
     deals_lost: closedLost,
     win_rate: won + closedLost ? Math.round((won / (won + closedLost)) * 1000) / 10 : null,
@@ -78,67 +78,67 @@ export function metrics(db, userIds, range) {
     commission_won: commissionWon,
     viewings_done: heldTypes.viewing,
     meetings_held: heldTypes.meeting,
-    calls_logged: n(`SELECT COUNT(*) n FROM activities WHERE user_id IN (${L}) AND occurred_at >= ? AND occurred_at < ? AND type = 'call'`) + heldTypes.call,
-    activities_logged: n(`SELECT COUNT(*) n FROM activities WHERE user_id IN (${L}) AND occurred_at >= ? AND occurred_at < ?`),
+    calls_logged: await n(`SELECT COUNT(*) n FROM activities WHERE user_id IN (${L}) AND occurred_at >= ? AND occurred_at < ? AND type = 'call'`) + heldTypes.call,
+    activities_logged: await n(`SELECT COUNT(*) n FROM activities WHERE user_id IN (${L}) AND occurred_at >= ? AND occurred_at < ?`),
     tasks_approved: tasksDue.length,
     tasks_on_time_rate: tasksDue.length ? Math.round((onTime / tasksDue.length) * 1000) / 10 : null,
     meeting_hours: Math.round(meetingMinutes / 6) / 10,
     no_show_rate: scheduledPast ? Math.round((noShow / scheduledPast) * 1000) / 10 : null,
-    points: n(`SELECT COALESCE(SUM(points),0) n FROM points_ledger WHERE user_id IN (${L}) AND at >= ? AND at < ?`),
+    points: await n(`SELECT COALESCE(SUM(points),0) n FROM points_ledger WHERE user_id IN (${L}) AND at >= ? AND at < ?`),
   };
 }
 
 /** Snapshot (not period-bound) figures: open pipeline, overdue tasks, today's agenda size. */
-export function snapshot(db, userIds, nowIso) {
+export async function snapshot(db, userIds, nowIso) {
   if (!userIds.length) userIds = ['__none__'];
   const L = inList(userIds);
-  const pipe = db.all(`SELECT stage, COUNT(*) c, COALESCE(SUM(value),0) v FROM deals WHERE owner_id IN (${L}) AND stage NOT IN ('won','lost') GROUP BY stage`, ...userIds);
+  const pipe = await db.all(`SELECT stage, COUNT(*) c, COALESCE(SUM(value),0) v FROM deals WHERE owner_id IN (${L}) AND stage NOT IN ('won','lost') GROUP BY stage`, ...userIds);
   return {
     pipeline_by_stage: pipe,
     pipeline_value: pipe.reduce((s, r) => s + r.v, 0),
     open_deals: pipe.reduce((s, r) => s + r.c, 0),
-    open_tasks: db.get(`SELECT COUNT(*) n FROM tasks WHERE assignee_id IN (${L}) AND status IN ('todo','in_progress','changes_requested')`, ...userIds).n,
-    overdue_tasks: db.get(`SELECT COUNT(*) n FROM tasks WHERE assignee_id IN (${L}) AND status IN ('todo','in_progress','changes_requested') AND due_at < ?`, ...userIds, nowIso).n,
-    awaiting_review: db.get(`SELECT COUNT(*) n FROM tasks WHERE assignee_id IN (${L}) AND status = 'submitted'`, ...userIds).n,
-    active_leads: db.get(`SELECT COUNT(*) n FROM leads WHERE owner_id IN (${L}) AND status IN ('new','contacted','qualified','nurturing')`, ...userIds).n,
-    uncontacted_leads: db.get(`SELECT COUNT(*) n FROM leads WHERE owner_id IN (${L}) AND status = 'new'`, ...userIds).n,
+    open_tasks: (await db.get(`SELECT COUNT(*) n FROM tasks WHERE assignee_id IN (${L}) AND status IN ('todo','in_progress','changes_requested')`, ...userIds)).n,
+    overdue_tasks: (await db.get(`SELECT COUNT(*) n FROM tasks WHERE assignee_id IN (${L}) AND status IN ('todo','in_progress','changes_requested') AND due_at < ?`, ...userIds, nowIso)).n,
+    awaiting_review: (await db.get(`SELECT COUNT(*) n FROM tasks WHERE assignee_id IN (${L}) AND status = 'submitted'`, ...userIds)).n,
+    active_leads: (await db.get(`SELECT COUNT(*) n FROM leads WHERE owner_id IN (${L}) AND status IN ('new','contacted','qualified','nurturing')`, ...userIds)).n,
+    uncontacted_leads: (await db.get(`SELECT COUNT(*) n FROM leads WHERE owner_id IN (${L}) AND status = 'new'`, ...userIds)).n,
   };
 }
 
 /** Time series per bucket: points, won volume, and activity count (calls+messages+completed events). */
-export function series(db, userIds, range) {
+export async function series(db, userIds, range) {
   if (!userIds.length) userIds = ['__none__'];
   const L = inList(userIds); const { start, end, buckets } = range;
   const idx = (iso) => { for (let i = 0; i < buckets.length; i++) if (iso >= buckets[i].start && iso < buckets[i].end) return i; return -1; };
   const points = buckets.map(() => 0), volume = buckets.map(() => 0), activity = buckets.map(() => 0), won = buckets.map(() => 0);
-  for (const r of db.all(`SELECT points, at FROM points_ledger WHERE user_id IN (${L}) AND at >= ? AND at < ?`, ...userIds, start, end)) { const i = idx(r.at); if (i >= 0) points[i] += r.points; }
-  for (const r of db.all(`SELECT value, closed_at FROM deals WHERE owner_id IN (${L}) AND stage = 'won' AND currency = 'AED' AND closed_at >= ? AND closed_at < ?`, ...userIds, start, end)) { const i = idx(r.closed_at); if (i >= 0) { volume[i] += r.value; won[i]++; } }
-  for (const r of db.all(`SELECT occurred_at t FROM activities WHERE user_id IN (${L}) AND occurred_at >= ? AND occurred_at < ?`, ...userIds, start, end)) { const i = idx(r.t); if (i >= 0) activity[i]++; }
-  for (const r of db.all(`SELECT start_at t FROM events WHERE organizer_id IN (${L}) AND status = 'completed' AND start_at >= ? AND start_at < ?`, ...userIds, start, end)) { const i = idx(r.t); if (i >= 0) activity[i]++; }
+  for (const r of await db.all(`SELECT points, at FROM points_ledger WHERE user_id IN (${L}) AND at >= ? AND at < ?`, ...userIds, start, end)) { const i = idx(r.at); if (i >= 0) points[i] += r.points; }
+  for (const r of await db.all(`SELECT value, closed_at FROM deals WHERE owner_id IN (${L}) AND stage = 'won' AND currency = 'AED' AND closed_at >= ? AND closed_at < ?`, ...userIds, start, end)) { const i = idx(r.closed_at); if (i >= 0) { volume[i] += r.value; won[i]++; } }
+  for (const r of await db.all(`SELECT occurred_at t FROM activities WHERE user_id IN (${L}) AND occurred_at >= ? AND occurred_at < ?`, ...userIds, start, end)) { const i = idx(r.t); if (i >= 0) activity[i]++; }
+  for (const r of await db.all(`SELECT start_at t FROM events WHERE organizer_id IN (${L}) AND status = 'completed' AND start_at >= ? AND start_at < ?`, ...userIds, start, end)) { const i = idx(r.t); if (i >= 0) activity[i]++; }
   // Index of the bucket containing "now" so charts don't draw the future as zeros.
   const now = new Date().toISOString();
   const current = now >= end ? buckets.length - 1 : buckets.findIndex((b) => now >= b.start && now < b.end);
   return { labels: buckets.map((b) => b.label), points, won_volume: volume, deals_won: won, activity, current_index: current };
 }
 
-export function leaderboard(db, tenantId, range) {
-  const users = db.all(`SELECT u.id, u.name, u.role, u.title, u.color, u.team_id, t.name team_name FROM users u LEFT JOIN teams t ON t.id = u.team_id
+export async function leaderboard(db, tenantId, range) {
+  const users = await db.all(`SELECT u.id, u.name, u.role, u.title, u.color, u.team_id, t.name team_name FROM users u LEFT JOIN teams t ON t.id = u.team_id
     WHERE u.tenant_id = ? AND u.active = 1 AND u.role IN ('agent','team_lead')`, tenantId);
-  const badges = new Map(db.all(`SELECT user_id, COUNT(*) c FROM user_achievements GROUP BY user_id`).map((r) => [r.user_id, r.c]));
-  const rows = users.map((u) => {
-    const m = metrics(db, [u.id], range);
+  const badges = new Map((await db.all(`SELECT user_id, COUNT(*) c FROM user_achievements GROUP BY user_id`)).map((r) => [r.user_id, r.c]));
+  const rows = await Promise.all(users.map(async (u) => {
+    const m = await metrics(db, [u.id], range);
     return { ...u, points: m.points, deals_won: m.deals_won, won_volume: m.won_volume, viewings_done: m.viewings_done, tasks_approved: m.tasks_approved, calls_logged: m.calls_logged, badges: badges.get(u.id) || 0 };
-  });
+  }));
   rows.sort((a, b) => b.points - a.points || b.won_volume - a.won_volume || a.name.localeCompare(b.name));
   rows.forEach((r, i) => { r.rank = i + 1; });
   return rows;
 }
 
 /** Calendar time use per member: hours by event type, conflicts (double-booked attended events). */
-export function timeUse(db, userIds, range) {
+export async function timeUse(db, userIds, range) {
   const out = [];
   for (const id of userIds) {
-    const evs = db.all(`SELECT e.id, e.type, e.status, e.start_at, e.end_at FROM events e
+    const evs = await db.all(`SELECT e.id, e.type, e.status, e.start_at, e.end_at FROM events e
       WHERE (e.organizer_id = ? OR e.id IN (SELECT event_id FROM event_attendees WHERE user_id = ? AND response != 'declined'))
       AND e.start_at >= ? AND e.start_at < ? AND e.status != 'cancelled' ORDER BY e.start_at`, id, id, range.start, range.end);
     const hours = { meeting: 0, viewing: 0, call: 0, internal: 0, focus: 0 };

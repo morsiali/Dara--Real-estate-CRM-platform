@@ -21,27 +21,27 @@ export function accessMode(tenant, now = new Date().toISOString()) {
   return 'full';
 }
 
-export function usage(db, tenantId) {
+export async function usage(db, tenantId) {
   return {
-    seats: db.get('SELECT COUNT(*) n FROM users WHERE tenant_id = ? AND active = 1', tenantId).n,
-    listings: db.get(`SELECT COUNT(*) n FROM properties WHERE tenant_id = ? AND status NOT IN ('sold','rented','off_market')`, tenantId).n,
+    seats: (await db.get('SELECT COUNT(*) n FROM users WHERE tenant_id = ? AND active = 1', tenantId)).n,
+    listings: (await db.get(`SELECT COUNT(*) n FROM properties WHERE tenant_id = ? AND status NOT IN ('sold','rented','off_market')`, tenantId)).n,
   };
 }
 
 /** Limit check. kind: 'seats' | 'listings'. Hard limits block; returns a warning flag at >= 80%. */
-export function checkLimit(db, tenant, kind, adding = 1) {
+export async function checkLimit(db, tenant, kind, adding = 1) {
   const plan = PLANS[tenant.plan] || PLANS.trial;
   const limit = plan[kind];
-  const used = usage(db, tenant.id)[kind];
+  const used = (await usage(db, tenant.id))[kind];
   if (limit != null && used + adding > limit) {
     throw new HttpError(409, 'ENTITLEMENT_LIMIT', `Your ${plan.name} plan includes ${limit} ${kind === 'seats' ? 'active users' : 'active listings'}. Deactivate one or upgrade the plan.`, { kind, limit, used });
   }
   return { limit, used: used + adding, warn: limit != null && (used + adding) / limit >= WARN_AT };
 }
 
-export function planSummary(db, tenant) {
+export async function planSummary(db, tenant) {
   const plan = PLANS[tenant.plan] || PLANS.trial;
-  const u = usage(db, tenant.id);
+  const u = await usage(db, tenant.id);
   const pct = (used, limit) => (limit ? Math.round((used / limit) * 100) : null);
   return {
     plan: tenant.plan, plan_name: plan.name, proposed: plan.proposed, status: tenant.status, trial_ends_at: tenant.trial_ends_at,

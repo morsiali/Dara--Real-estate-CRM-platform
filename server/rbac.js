@@ -47,36 +47,36 @@ export const MATRIX = {
 export const scopeOf = (user, action) => MATRIX[action]?.[user.role] ?? 'None';
 
 /** User ids whose records `user` may see for an Own/Team/Tenant-scoped action. */
-export function visibleUserIds(db, user, action) {
+export async function visibleUserIds(db, user, action) {
   const scope = scopeOf(user, action);
   if (scope === 'None') return [];
   if (scope === 'Own') return [user.id];
   if (scope === 'Team') {
     if (!user.team_id) return [user.id];
-    return db.all('SELECT id FROM users WHERE tenant_id = ? AND team_id = ?', user.tenant_id, user.team_id).map((r) => r.id);
+    return (await db.all('SELECT id FROM users WHERE tenant_id = ? AND team_id = ?', user.tenant_id, user.team_id)).map((r) => r.id);
   }
-  return db.all('SELECT id FROM users WHERE tenant_id = ?', user.tenant_id).map((r) => r.id);
+  return (await db.all('SELECT id FROM users WHERE tenant_id = ?', user.tenant_id)).map((r) => r.id);
 }
 
 /** Can `user` act on a record owned by `ownerId` under `action`? */
-export function canOnOwner(db, user, action, ownerId) {
+export async function canOnOwner(db, user, action, ownerId) {
   const scope = scopeOf(user, action);
   if (scope === 'None') return false;
   if (scope === 'Tenant') {
     if (!ownerId) return true;
-    const o = db.get('SELECT tenant_id FROM users WHERE id = ?', ownerId);
+    const o = await db.get('SELECT tenant_id FROM users WHERE id = ?', ownerId);
     return !!o && o.tenant_id === user.tenant_id;
   }
   if (ownerId === user.id) return true;
   if (scope === 'Team' && ownerId && user.team_id) {
-    const o = db.get('SELECT team_id, tenant_id FROM users WHERE id = ?', ownerId);
+    const o = await db.get('SELECT team_id, tenant_id FROM users WHERE id = ?', ownerId);
     return !!o && o.tenant_id === user.tenant_id && o.team_id === user.team_id;
   }
   return false;
 }
 
-export function require(db, user, action, ownerId) {
-  if (!canOnOwner(db, user, action, ownerId)) throw forbidden();
+export async function requireOwner(db, user, action, ownerId) {
+  if (!await canOnOwner(db, user, action, ownerId)) throw forbidden();
 }
 
 export function requireScope(user, action) {
@@ -84,8 +84,8 @@ export function requireScope(user, action) {
 }
 
 /** SQL fragment restricting `col` to the visible user ids. */
-export function ownerFilter(db, user, action, col) {
-  const ids = visibleUserIds(db, user, action);
+export async function ownerFilter(db, user, action, col) {
+  const ids = await visibleUserIds(db, user, action);
   if (!ids.length) return { sql: '1=0', params: [] };
   return { sql: `${col} IN (${ids.map(() => '?').join(',')})`, params: ids };
 }

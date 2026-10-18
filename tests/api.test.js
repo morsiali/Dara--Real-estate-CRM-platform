@@ -13,7 +13,7 @@ before(async () => {
 });
 after(() => env.close());
 
-const leadOwnedBy = (email) => env.db.get('SELECT l.id FROM leads l JOIN users u ON u.id = l.owner_id WHERE u.email = ? LIMIT 1', email).id;
+const leadOwnedBy = async (email) => (await env.db.get('SELECT l.id FROM leads l JOIN users u ON u.id = l.owner_id WHERE u.email = ? LIMIT 1', email)).id;
 const futureHour = (h) => { const d = new Date(Date.now() + h * 3600e3); d.setUTCMinutes(0, 0, 0); return d.toISOString(); };
 
 describe('authentication & request guards', () => {
@@ -57,12 +57,12 @@ describe('record scoping (Own / Team / Tenant)', () => {
     assert.ok(m.data.items.length > a.data.items.length);
   });
   test("agent gets 404 (not 403) for another agent's lead", async () => {
-    const r = await agent.get(`/leads/${leadOwnedBy('karim@dara.demo')}`);
+    const r = await agent.get(`/leads/${await leadOwnedBy('karim@dara.demo')}`);
     assert.equal(r.status, 404);
   });
   test('team lead sees team leads but not the other team', async () => {
-    assert.equal((await lead.get(`/leads/${leadOwnedBy('karim@dara.demo')}`)).status, 200);
-    assert.equal((await lead.get(`/leads/${leadOwnedBy('yousef@dara.demo')}`)).status, 404);
+    assert.equal((await lead.get(`/leads/${await leadOwnedBy('karim@dara.demo')}`)).status, 200);
+    assert.equal((await lead.get(`/leads/${await leadOwnedBy('yousef@dara.demo')}`)).status, 404);
   });
   test('member dashboard: own yes, team lead for team, management for all', async () => {
     assert.equal((await agent.get('/dashboard/member/me')).status, 200);
@@ -107,7 +107,7 @@ describe('lead → deal workflow', () => {
   test('team lead round-robins within their team only', async () => {
     const r1 = await lead.post('/leads', { first_name: 'RR1', phone: '1', assign: 'round_robin' });
     const r2 = await lead.post('/leads', { first_name: 'RR2', phone: '2', assign: 'round_robin' });
-    const team = env.db.all(`SELECT id FROM users WHERE team_id = ? AND role = 'agent'`, lead.user.team_id).map((x) => x.id);
+    const team = (await env.db.all(`SELECT id FROM users WHERE team_id = ? AND role = 'agent'`, lead.user.team_id)).map((x) => x.id);
     assert.ok(team.includes(r1.data.item.owner_id) && team.includes(r2.data.item.owner_id));
     assert.notEqual(r1.data.item.owner_id, r2.data.item.owner_id);
     assert.equal((await lead.post(`/leads/${leadId}/assign`, { owner_id: yousef.user.id })).status, 403);
@@ -116,7 +116,7 @@ describe('lead → deal workflow', () => {
     assert.equal((await agent.post(`/leads/${leadId}/convert`, {})).status, 409);
     assert.equal((await agent.post(`/leads/${leadId}/status`, { status: 'contacted' })).status, 200);
     assert.equal((await agent.post(`/leads/${leadId}/status`, { status: 'qualified' })).status, 200);
-    const pts = env.db.get(`SELECT COUNT(*) n FROM points_ledger WHERE source_type = 'lead_qualified' AND source_id = ?`, leadId).n;
+    const pts = (await env.db.get(`SELECT COUNT(*) n FROM points_ledger WHERE source_type = 'lead_qualified' AND source_id = ?`, leadId)).n;
     assert.equal(pts, 1);
   });
   test('matches are explainable and cite the listing', async () => {
@@ -133,7 +133,7 @@ describe('lead → deal workflow', () => {
     const r = await agent.post(`/leads/${leadId}/convert`, { value: 0 });
     assert.equal(r.status, 201);
     dealId = r.data.deal_id;
-    assert.equal(env.db.get('SELECT status FROM leads WHERE id = ?', leadId).status, 'converted');
+    assert.equal((await env.db.get('SELECT status FROM leads WHERE id = ?', leadId)).status, 'converted');
   });
   test('winning a deal requires an offer stage, listing and value', async () => {
     assert.equal((await agent.post(`/deals/${dealId}/stage`, { stage: 'won' })).data.error.code, 'INVALID_TRANSITION');
@@ -141,14 +141,14 @@ describe('lead → deal workflow', () => {
     assert.equal((await agent.post(`/deals/${dealId}/stage`, { stage: 'won' })).data.error.code, 'PROPERTY_REQUIRED');
   });
   test('won deal: listing marked sold (platform authority), points once, management notified, audited', async () => {
-    const p = env.db.get(`SELECT * FROM properties WHERE status = 'available' AND authority = 'platform' AND listing_type = 'sale' LIMIT 1`);
+    const p = await env.db.get(`SELECT * FROM properties WHERE status = 'available' AND authority = 'platform' AND listing_type = 'sale' LIMIT 1`);
     assert.equal((await agent.patch(`/deals/${dealId}`, { property_id: p.id, value: p.price })).status, 200);
     const r = await agent.post(`/deals/${dealId}/stage`, { stage: 'won' });
     assert.equal(r.status, 200);
-    assert.equal(env.db.get('SELECT status FROM properties WHERE id = ?', p.id).status, 'sold');
-    assert.equal(env.db.get(`SELECT COUNT(*) n FROM points_ledger WHERE source_type = 'deal_won' AND source_id = ?`, dealId).n, 1);
-    assert.ok(env.db.get(`SELECT id FROM notifications WHERE user_id = ? AND dedupe_key = ?`, mgr.user.id, `deal_won:${dealId}`));
-    assert.ok(env.db.get(`SELECT id FROM audit_log WHERE entity_id = ? AND action = 'deal.stage_changed'`, dealId));
+    assert.equal((await env.db.get('SELECT status FROM properties WHERE id = ?', p.id)).status, 'sold');
+    assert.equal((await env.db.get(`SELECT COUNT(*) n FROM points_ledger WHERE source_type = 'deal_won' AND source_id = ?`, dealId)).n, 1);
+    assert.ok(await env.db.get(`SELECT id FROM notifications WHERE user_id = ? AND dedupe_key = ?`, mgr.user.id, `deal_won:${dealId}`));
+    assert.ok(await env.db.get(`SELECT id FROM audit_log WHERE entity_id = ? AND action = 'deal.stage_changed'`, dealId));
     assert.equal((await agent.patch(`/deals/${dealId}`, { title: 'edit closed' })).status, 409);
   });
   test('only management reopens a closed deal, with reason', async () => {
@@ -160,14 +160,14 @@ describe('lead → deal workflow', () => {
     assert.equal((await agent.post(`/deals/${dealId}/stage`, { stage: 'lost' })).data.error.code, 'REASON_REQUIRED');
   });
   test('externally controlled listing status is not changed by a win', async () => {
-    const p = env.db.get(`SELECT * FROM properties WHERE status = 'available' AND authority = 'external' LIMIT 1`);
-    const c = env.db.get('SELECT id FROM contacts WHERE owner_id = ? LIMIT 1', agent.user.id);
+    const p = await env.db.get(`SELECT * FROM properties WHERE status = 'available' AND authority = 'external' LIMIT 1`);
+    const c = await env.db.get('SELECT id FROM contacts WHERE owner_id = ? LIMIT 1', agent.user.id);
     const d = await agent.post('/deals', { title: 'Ext', contact_id: c.id, property_id: p.id, value: p.price });
     await agent.post(`/deals/${d.data.item.id}/stage`, { stage: 'offer' });
     const r = await agent.post(`/deals/${d.data.item.id}/stage`, { stage: 'won' });
     assert.equal(r.status, 200);
     assert.ok(r.data.notes[0].includes('controlled externally'));
-    assert.equal(env.db.get('SELECT status FROM properties WHERE id = ?', p.id).status, 'available');
+    assert.equal((await env.db.get('SELECT status FROM properties WHERE id = ?', p.id)).status, 'available');
   });
 });
 
@@ -181,7 +181,7 @@ describe('tasks: assignment and manager review', () => {
     const r = await lead.post('/tasks', { title: 'Call back portal leads', assignee_id: agent.user.id, priority: 'high', due_at: futureHour(5) });
     assert.equal(r.status, 201);
     taskId = r.data.item.id;
-    assert.ok(env.db.get(`SELECT id FROM notifications WHERE user_id = ? AND dedupe_key = ?`, agent.user.id, `task_assigned:${taskId}`));
+    assert.ok(await env.db.get(`SELECT id FROM notifications WHERE user_id = ? AND dedupe_key = ?`, agent.user.id, `task_assigned:${taskId}`));
   });
   test("other agents can't see the task", async () => {
     assert.equal((await karim.post(`/tasks/${taskId}/transition`, { action: 'start' })).status, 404);
@@ -194,7 +194,7 @@ describe('tasks: assignment and manager review', () => {
   test('approval awards priority points plus on-time bonus exactly once', async () => {
     const r = await lead.post(`/tasks/${taskId}/transition`, { action: 'approve' });
     assert.equal(r.status, 200); assert.equal(r.data.item.status, 'approved');
-    const rows = env.db.all(`SELECT source_type, points FROM points_ledger WHERE source_id = ? ORDER BY source_type`, taskId);
+    const rows = await env.db.all(`SELECT source_type, points FROM points_ledger WHERE source_id = ? ORDER BY source_type`, taskId);
     assert.deepEqual(rows.map((x) => [x.source_type, x.points]), [['task_approved', 15], ['task_on_time', 5]]);
     assert.equal((await lead.post(`/tasks/${taskId}/transition`, { action: 'approve' })).status, 409);
   });
@@ -213,7 +213,7 @@ describe('calendar', () => {
   test('creates an event and invites attendees', async () => {
     const r = await agent.post('/events', { title: 'Viewing test', type: 'viewing', start_at: futureHour(240), end_at: futureHour(241), attendee_ids: [karim.user.id] });
     assert.equal(r.status, 201); evId = r.data.item.id;
-    assert.ok(env.db.get(`SELECT id FROM notifications WHERE user_id = ? AND dedupe_key = ?`, karim.user.id, `invite:${evId}`));
+    assert.ok(await env.db.get(`SELECT id FROM notifications WHERE user_id = ? AND dedupe_key = ?`, karim.user.id, `invite:${evId}`));
   });
   test('detects double booking (409) and allows explicit override', async () => {
     const body = { title: 'Clash', type: 'meeting', start_at: futureHour(240), end_at: futureHour(241) };
@@ -233,7 +233,7 @@ describe('calendar', () => {
     const start = new Date(Date.now() - 2 * 3600e3).toISOString(); const end = new Date(Date.now() - 3600e3).toISOString();
     const r = await agent.post('/events', { title: 'Past viewing', type: 'viewing', start_at: start, end_at: end, allow_conflicts: true });
     assert.equal((await agent.post(`/events/${r.data.item.id}/outcome`, { status: 'completed', outcome: 'Liked it' })).status, 200);
-    assert.equal(env.db.get(`SELECT points FROM points_ledger WHERE source_id = ?`, r.data.item.id).points, 20);
+    assert.equal((await env.db.get(`SELECT points FROM points_ledger WHERE source_id = ?`, r.data.item.id)).points, 20);
     assert.equal((await agent.post(`/events/${r.data.item.id}/outcome`, { status: 'completed' })).status, 409);
   });
   test('agent cannot read a manager-only event they are not invited to', async () => {
@@ -245,7 +245,7 @@ describe('calendar', () => {
 
 describe('chat', () => {
   test('team channels are private to the team (+ management)', async () => {
-    const downtown = env.db.get(`SELECT id FROM channels WHERE kind = 'team' AND name = 'downtown-hills'`).id;
+    const downtown = (await env.db.get(`SELECT id FROM channels WHERE kind = 'team' AND name = 'downtown-hills'`)).id;
     assert.equal((await agent.get(`/channels/${downtown}/messages`)).status, 404);
     assert.equal((await yousef.get(`/channels/${downtown}/messages`)).status, 200);
     assert.equal((await mgr.get(`/channels/${downtown}/messages`)).status, 200);
@@ -256,7 +256,7 @@ describe('chat', () => {
     assert.equal(a.data.item.id, b.data.item.id);
     const m = await agent.post(`/channels/${a.data.item.id}/messages`, { body: 'Hi @Yousef, can you share the Canal Point floor plan?' });
     assert.equal(m.status, 201);
-    assert.ok(env.db.get(`SELECT id FROM notifications WHERE user_id = ? AND type = 'mention'`, yousef.user.id));
+    assert.ok(await env.db.get(`SELECT id FROM notifications WHERE user_id = ? AND type = 'mention'`, yousef.user.id));
   });
   test('only management creates company-wide channels; agents none', async () => {
     assert.equal((await agent.post('/channels', { name: 'x' })).status, 403);
@@ -265,7 +265,7 @@ describe('chat', () => {
     assert.equal((await mgr.post('/channels', { name: 'off-plan', kind: 'public' })).status, 201);
   });
   test('messages are pushed in real time over SSE', async () => {
-    const general = env.db.get(`SELECT id FROM channels WHERE kind = 'public' AND name = 'general'`).id;
+    const general = (await env.db.get(`SELECT id FROM channels WHERE kind = 'public' AND name = 'general'`)).id;
     const received = new Promise((resolve, reject) => {
       const req = http.get(env.base + '/api/stream', { headers: { cookie: karim.cookie } }, (res) => {
         let buf = '';
@@ -331,17 +331,17 @@ describe('tenant isolation', () => {
   let outsider;
   before(async () => {
     const t = uuidv7(); const u = uuidv7();
-    env.db.run('INSERT INTO tenants(id, name, created_at) VALUES (?,?,?)', t, 'Other Brokerage', nowIso());
-    env.db.run(`INSERT INTO users(id, tenant_id, name, email, password_hash, role, created_at) VALUES (?,?,?,?,?, 'admin', ?)`, u, t, 'Outsider', 'boss@other.test', hashPassword('OtherPass2026'), nowIso());
+    await env.db.run('INSERT INTO tenants(id, name, created_at, mfa_required_admins) VALUES (?,?,?,0)', t, 'Other Brokerage', nowIso());
+    await env.db.run(`INSERT INTO users(id, tenant_id, name, email, password_hash, role, created_at) VALUES (?,?,?,?,?, 'admin', ?)`, u, t, 'Outsider', 'boss@other.test', hashPassword('OtherPass2026'), nowIso());
     outsider = client(env.base); await outsider.login('boss@other.test', 'OtherPass2026');
   });
   test('cross-tenant record access returns 404 and lists are empty', async () => {
-    assert.equal((await outsider.get(`/leads/${leadOwnedBy('agent@dara.demo')}`)).status, 404);
+    assert.equal((await outsider.get(`/leads/${await leadOwnedBy('agent@dara.demo')}`)).status, 404);
     assert.equal((await outsider.get('/leads')).data.items.length, 0);
     assert.equal((await outsider.get('/deals')).data.items.length, 0);
     assert.equal((await outsider.get('/properties')).data.items.length, 0);
     assert.equal((await outsider.get(`/dashboard/member/${agent.user.id}`)).status, 404);
-    const general = env.db.get(`SELECT id FROM channels WHERE name = 'general'`).id;
+    const general = (await env.db.get(`SELECT id FROM channels WHERE name = 'general'`)).id;
     assert.equal((await outsider.get(`/channels/${general}/messages`)).status, 404);
     assert.equal((await outsider.get('/users')).data.items.length, 1);
   });
@@ -366,9 +366,9 @@ describe('analytics consistency', () => {
     assert.deepEqual(pts, [...pts].sort((a, b) => b - a));
   });
   test('daily activity points are capped at 30', async () => {
-    for (let i = 0; i < 15; i++) await daniel.post('/activities', { type: 'call', summary: `cap ${i}`, lead_id: leadOwnedBy('daniel@dara.demo') });
+    for (let i = 0; i < 15; i++) await daniel.post('/activities', { type: 'call', summary: `cap ${i}`, lead_id: await leadOwnedBy('daniel@dara.demo') });
     const day = new Date().toISOString().slice(0, 10);
-    const s = env.db.get(`SELECT SUM(points) s FROM points_ledger WHERE user_id = ? AND source_type = 'activity' AND substr(at,1,10) = ?`, daniel.user.id, day).s;
+    const s = (await env.db.get(`SELECT SUM(points) s FROM points_ledger WHERE user_id = ? AND source_type = 'activity' AND substr(at,1,10) = ?`, daniel.user.id, day)).s;
     assert.ok(s <= 30, `got ${s}`);
   });
 });

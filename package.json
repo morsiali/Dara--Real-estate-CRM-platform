@@ -4,12 +4,22 @@
   "private": true,
   "description": "Dara — real estate CRM and revenue operations platform (Release 1 prototype)",
   "type": "module",
-  "engines": { "node": ">=22.13" },
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server/index.js",
     "seed": "node --disable-warning=ExperimentalWarning server/seed.js --reset",
     "test": "node --disable-warning=ExperimentalWarning --test --test-reporter=spec \"tests/*.test.js\"",
     "migrate:down": "node --disable-warning=ExperimentalWarning server/migrate-cli.js down",
-    "migrate:up": "node --disable-warning=ExperimentalWarning server/migrate-cli.js up"
+    "migrate:up": "node --disable-warning=ExperimentalWarning server/migrate-cli.js up",
+    "test:pg": "node scripts/test-pg.mjs",
+    "test:all": "npm test && npm run test:pg"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8"
+  },
+  "optionalDependencies": {
+    "pg": "^8.23.0"
   }
 }

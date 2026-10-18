@@ -153,12 +153,12 @@ test('F3 access mode: suspended, cancelled and expired trials are read-only; dat
   assert.equal(accessMode({ status: 'suspended', is_platform: 1 }, now), 'full');
 });
 
-test('F4 seat limit is a hard limit with an 80% warning', () => {
+test('F4 seat limit is a hard limit with an 80% warning', async () => {
   const fakeDb = (seats) => ({ get: (sql) => ({ n: sql.includes('users') ? seats : 0 }) });
   const t = { id: 't', plan: 'trial' };
   assert.equal(PLANS.trial.seats, 5);
-  assert.equal(checkLimit(fakeDb(3), t, 'seats').warn, true); // 4 of 5
-  assert.equal(checkLimit(fakeDb(1), t, 'seats').warn, false);
-  assert.throws(() => checkLimit(fakeDb(5), t, 'seats'), /includes 5 active users/);
-  assert.doesNotThrow(() => checkLimit(fakeDb(5000), { id: 't', plan: 'enterprise' }, 'seats'));
+  assert.equal((await checkLimit(fakeDb(3), t, 'seats')).warn, true); // 4 of 5
+  assert.equal((await checkLimit(fakeDb(1), t, 'seats')).warn, false);
+  await assert.rejects(() => checkLimit(fakeDb(5), t, 'seats'), /includes 5 active users/);
+  await assert.doesNotReject(() => checkLimit(fakeDb(5000), { id: 't', plan: 'enterprise' }, 'seats'));
 });

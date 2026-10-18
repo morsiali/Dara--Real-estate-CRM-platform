@@ -29,22 +29,22 @@ export const ACHIEVEMENTS = [
 ];
 
 /** Awards points once per (user, source). Returns the awarded amount (0 if duplicate or capped). */
-export function award(ctx, user, sourceType, sourceId, points, reason, at = nowIso()) {
+export async function award(ctx, user, sourceType, sourceId, points, reason, at = nowIso()) {
   if (!user || points <= 0) return 0;
   let pts = points;
   if (sourceType === 'activity') {
     const day = at.slice(0, 10);
-    const used = ctx.db.get(`SELECT COALESCE(SUM(points),0) s FROM points_ledger WHERE user_id = ? AND source_type = 'activity' AND substr(at,1,10) = ?`, user.id, day).s;
+    const used = (await ctx.db.get(`SELECT COALESCE(SUM(points),0) s FROM points_ledger WHERE user_id = ? AND source_type = 'activity' AND substr(at,1,10) = ?`, user.id, day)).s;
     pts = Math.max(0, Math.min(points, DAILY_ACTIVITY_CAP - used));
     if (pts === 0) return 0;
   }
-  const r = ctx.db.run(
+  const r = await ctx.db.run(
     `INSERT INTO points_ledger(id, tenant_id, user_id, source_type, source_id, points, reason, at) VALUES (?,?,?,?,?,?,?,?)
      ON CONFLICT(user_id, source_type, source_id) DO NOTHING`,
     uuidv7(), user.tenant_id, user.id, sourceType, sourceId, pts, reason, at);
   if (r.changes === 0) return 0;
   ctx.hub?.send(user.id, 'points', { points: pts, reason });
-  evaluateAchievements(ctx, user);
+  await evaluateAchievements(ctx, user);
   return pts;
 }
 
@@ -60,15 +60,15 @@ export function longestStreak(days) {
   return best;
 }
 
-export function achievementProgress(db, userId) {
-  const one = (sql, ...p) => db.get(sql, ...p)?.n ?? 0;
-  const won = one(`SELECT COUNT(*) n FROM deals WHERE owner_id = ? AND stage = 'won'`, userId);
-  const bestMonth = one(`SELECT COALESCE(MAX(v),0) n FROM (SELECT SUM(value) v FROM deals WHERE owner_id = ? AND stage = 'won' AND currency = 'AED' GROUP BY substr(closed_at,1,7))`, userId);
-  const viewings = one(`SELECT COUNT(*) n FROM events WHERE organizer_id = ? AND type = 'viewing' AND status = 'completed'`, userId);
-  const approved = one(`SELECT COUNT(*) n FROM tasks WHERE assignee_id = ? AND status = 'approved'`, userId);
-  const onTime = one(`SELECT COUNT(*) n FROM tasks WHERE assignee_id = ? AND status = 'approved' AND due_at IS NOT NULL AND submitted_at <= due_at`, userId);
-  const opened = one(`SELECT COUNT(*) n FROM deals WHERE owner_id = ?`, userId);
-  const days = db.all(`SELECT DISTINCT substr(at,1,10) d FROM points_ledger WHERE user_id = ?`, userId).map((r) => r.d);
+export async function achievementProgress(db, userId) {
+  const one = async (sql, ...p) => (await db.get(sql, ...p))?.n ?? 0;
+  const won = await one(`SELECT COUNT(*) n FROM deals WHERE owner_id = ? AND stage = 'won'`, userId);
+  const bestMonth = await one(`SELECT COALESCE(MAX(v),0) n FROM (SELECT SUM(value) v FROM deals WHERE owner_id = ? AND stage = 'won' AND currency = 'AED' GROUP BY substr(closed_at,1,7)) monthly`, userId);
+  const viewings = await one(`SELECT COUNT(*) n FROM events WHERE organizer_id = ? AND type = 'viewing' AND status = 'completed'`, userId);
+  const approved = await one(`SELECT COUNT(*) n FROM tasks WHERE assignee_id = ? AND status = 'approved'`, userId);
+  const onTime = await one(`SELECT COUNT(*) n FROM tasks WHERE assignee_id = ? AND status = 'approved' AND due_at IS NOT NULL AND submitted_at <= due_at`, userId);
+  const opened = await one(`SELECT COUNT(*) n FROM deals WHERE owner_id = ?`, userId);
+  const days = (await db.all(`SELECT DISTINCT substr(at,1,10) d FROM points_ledger WHERE user_id = ?`, userId)).map((r) => r.d);
   const streak = longestStreak(days);
   return {
     first_close: [won, 1], closer_5: [won, 5], million_month: [bestMonth, 100_000_000],
@@ -77,19 +77,19 @@ export function achievementProgress(db, userId) {
   };
 }
 
-export function evaluateAchievements(ctx, user) {
-  const prog = achievementProgress(ctx.db, user.id);
+export async function evaluateAchievements(ctx, user) {
+  const prog = await achievementProgress(ctx.db, user.id);
   const earned = [];
   for (const a of ACHIEVEMENTS) {
     const [v, target] = prog[a.code];
     if (v < target) continue;
-    const r = ctx.db.run('INSERT INTO user_achievements(user_id, code, earned_at) VALUES (?,?,?) ON CONFLICT DO NOTHING', user.id, a.code, nowIso());
+    const r = await ctx.db.run('INSERT INTO user_achievements(user_id, code, earned_at) VALUES (?,?,?) ON CONFLICT DO NOTHING', user.id, a.code, nowIso());
     if (r.changes === 0) continue;
     earned.push(a.code);
-    notify(ctx, user.id, { type: 'achievement', title: `Achievement unlocked: ${a.name}`, body: a.description, link: '#/leaderboard', dedupeKey: `ach:${a.code}` });
+    await notify(ctx, user.id, { type: 'achievement', title: `Achievement unlocked: ${a.name}`, body: a.description, link: '#/leaderboard', dedupeKey: `ach:${a.code}` });
     // Celebrate in the company channel.
-    const general = ctx.db.get(`SELECT id FROM channels WHERE tenant_id = ? AND kind = 'public' ORDER BY created_at LIMIT 1`, user.tenant_id);
-    if (general && ctx.postSystemMessage) ctx.postSystemMessage(general.id, `${user.name} unlocked “${a.name}” — ${a.description}`);
+    const general = await ctx.db.get(`SELECT id FROM channels WHERE tenant_id = ? AND kind = 'public' ORDER BY created_at LIMIT 1`, user.tenant_id);
+    if (general && ctx.postSystemMessage) await ctx.postSystemMessage(general.id, `${user.name} unlocked “${a.name}” — ${a.description}`);
   }
   return earned;
 }

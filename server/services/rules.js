@@ -143,3 +143,11 @@ export function reservationTransition(r, action, o = {}) {
   }
   return { ok: true, to: A.to };
 }
+
+/* ---------- Workspace compliance policies (both off by default; see ADR-014) ---------- */
+/** True when the workspace blocks people whose broker card (BRN) has expired, and this person's has. */
+export const brnBlocked = (tenant, user, now = new Date().toISOString()) =>
+  !!(tenant?.policy_block_expired_brn && user?.brn_expiry && user.brn_expiry < now);
+/** True when the workspace blocks listings whose advertising permit has expired, and this one's has. */
+export const permitBlocked = (tenant, property, now = new Date().toISOString()) =>
+  !!(tenant?.policy_block_expired_permit && property?.permit_expiry && property.permit_expiry < now);

@@ -1,7 +1,7 @@
 // SaaS (Part F), projects, reservations (E2: AC-RES-01..03) and Dubai compliance (Part G) — API tests.
 import { test, before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, client, as } from './helpers.js';
+import { startApp, client, finishOnboarding, as } from './helpers.js';
 
 let env; let mgr; let agent; let karim; let lead; let admin; let platform; let yousef;
 before(async () => {
@@ -10,9 +10,10 @@ before(async () => {
 });
 after(() => env.close());
 
-const demoTenant = () => env.db.get(`SELECT * FROM tenants WHERE slug = 'dara-demo'`);
-const freeUnit = (authority = 'platform', exclude = []) => env.db.get(`SELECT p.* FROM properties p JOIN tenants t ON t.id = p.tenant_id WHERE t.slug = 'dara-demo' AND p.status = 'available' AND p.authority = ?
-  AND p.id NOT IN (SELECT property_id FROM reservations WHERE status IN ('held','pending_confirmation','confirmed')) ${exclude.length ? `AND p.id NOT IN (${exclude.map(() => '?').join(',')})` : ''} LIMIT 1`, authority, ...exclude);
+const demoTenant = async () => await env.db.get(`SELECT * FROM tenants WHERE slug = 'dara-demo'`);
+const FREE_UNIT_SQL = `SELECT p.* FROM properties p JOIN tenants t ON t.id = p.tenant_id WHERE t.slug = 'dara-demo' AND p.status = 'available' AND p.authority = ?
+  AND p.id NOT IN (SELECT property_id FROM reservations WHERE status IN ('held','pending_confirmation','confirmed')) ORDER BY p.ref LIMIT 1`;
+const freeUnit = async (authority = 'platform') => await env.db.get(FREE_UNIT_SQL, authority);
 
 describe('self-signup and workspace', () => {
   let owner; let tenantId;
@@ -21,6 +22,12 @@ describe('self-signup and workspace', () => {
     const r = await owner.post('/signup', { company: 'Test Brokerage', name: 'Tess Owner', email: 'tess@testbrokerage.ae', password: 'StrongPass2026', orn: 'ORN-1', accept_terms: true });
     assert.equal(r.status, 201);
     tenantId = r.data.tenant_id;
+    // New workspaces: owner is unverified and must set up two-step sign-in before using the app.
+    assert.equal(r.data.user.email_verified, false);
+    assert.equal(r.data.user.mfa_setup_required, true);
+    assert.equal(env.mailer.sent.at(-1).to, 'tess@testbrokerage.ae');
+    assert.equal((await owner.get('/leads')).data.error.code, 'MFA_SETUP_REQUIRED');
+    await finishOnboarding(owner, r);
     const me = await owner.get('/auth/me');
     assert.equal(me.data.user.role, 'admin');
     assert.equal(me.data.tenant.status, 'trial');
@@ -51,7 +58,7 @@ describe('self-signup and workspace', () => {
     const ws = await owner.get('/workspace');
     assert.equal(ws.data.item.subscription.usage.seats, 5);
     assert.equal(ws.data.item.subscription.percent.seats, 100);
-    const a1 = env.db.get(`SELECT id FROM users WHERE email = 'a1@testbrokerage.ae'`).id;
+    const a1 = (await env.db.get(`SELECT id FROM users WHERE email = 'a1@testbrokerage.ae'`)).id;
     assert.equal((await owner.patch(`/users/${a1}`, { active: false })).status, 200);
     assert.equal((await owner.post('/users', { name: 'Sixth', email: 'a6@testbrokerage.ae', role: 'agent', password: 'Password123456' })).status, 201);
     assert.equal((await owner.patch(`/users/${a1}`, { active: true })).data.error.code, 'ENTITLEMENT_LIMIT');
@@ -62,7 +69,7 @@ describe('self-signup and workspace', () => {
     assert.equal((await mgr.get('/workspace')).data.item.orn, 'SYN-ORN-0042', 'manager reads own workspace only');
   });
   test('expired trial → read-only, but data stays readable and exportable; reactivation restores writes', async () => {
-    env.db.run(`UPDATE tenants SET trial_ends_at = '2020-01-01T00:00:00.000Z' WHERE id = ?`, tenantId);
+    await env.db.run(`UPDATE tenants SET trial_ends_at = '2020-01-01T00:00:00.000Z' WHERE id = ?`, tenantId);
     const w = await owner.post('/leads', { first_name: 'Blocked', phone: '1' });
     assert.equal(w.status, 403); assert.equal(w.data.error.code, 'WORKSPACE_READ_ONLY');
     assert.equal((await owner.get('/leads')).status, 200);
@@ -74,13 +81,13 @@ describe('self-signup and workspace', () => {
     assert.equal(data.users.length, 6);
     assert.ok(data.users.every((u) => !('password_hash' in u)), 'no password hashes in exports');
     assert.equal((await owner.post('/auth/password', { current: 'StrongPass2026', next: 'StrongPass2027' })).status, 200, 'account security still works when read-only');
-    env.db.run(`UPDATE tenants SET status = 'active' WHERE id = ?`, tenantId);
+    await env.db.run(`UPDATE tenants SET status = 'active' WHERE id = ?`, tenantId);
     assert.equal((await owner.post('/leads', { first_name: 'Allowed', phone: '1' })).status, 201);
   });
   test('export is admin-only and contains only the caller’s tenant', async () => {
     assert.equal((await mgr.get('/export')).status, 403);
     const ex = await (await fetch(env.base + '/api/export', { headers: { cookie: admin.cookie } })).json();
-    const demo = demoTenant().id;
+    const demo = (await demoTenant()).id;
     assert.ok(ex.leads.length > 50 && ex.leads.every((l) => l.tenant_id === demo));
     assert.ok(!ex.users.some((u) => u.email.endsWith('testbrokerage.ae')));
   });
@@ -100,13 +107,13 @@ describe('platform console', () => {
     assert.equal((await platform.get('/export')).status, 403);
   });
   test('suspending a workspace makes it read-only, is visible to its admins, and is audited', async () => {
-    const palm = env.db.get(`SELECT id FROM tenants WHERE name LIKE 'Palm Coast%'`).id;
+    const palm = (await env.db.get(`SELECT id FROM tenants WHERE name LIKE 'Palm Coast%'`)).id;
     assert.equal((await platform.patch(`/platform/tenants/${palm}`, { status: 'suspended' })).data.error.details.reason, 'is required');
     const r = await platform.patch(`/platform/tenants/${palm}`, { status: 'suspended', reason: 'Trial abuse check' });
     assert.equal(r.status, 200); assert.equal(r.data.item.access, 'read_only');
     const owner = client(env.base); await owner.login('owner@palmcoast.demo');
     assert.equal((await owner.post('/leads', { first_name: 'x', phone: '1' })).data.error.code, 'WORKSPACE_READ_ONLY');
-    assert.ok(env.db.get(`SELECT id FROM audit_log WHERE tenant_id = ? AND action = 'tenant.subscription_changed'`, palm));
+    assert.ok(await env.db.get(`SELECT id FROM audit_log WHERE tenant_id = ? AND action = 'tenant.subscription_changed'`, palm));
     assert.ok((await owner.get('/notifications')).data.items.some((n) => n.type === 'subscription'));
     const up = await platform.patch(`/platform/tenants/${palm}`, { status: 'active', plan: 'starter', reason: 'Converted to paid' });
     assert.equal(up.data.item.limits.seats, 10);
@@ -132,17 +139,17 @@ describe('projects decide availability authority', () => {
   test('changing a project’s authority cascades to its listings', async () => {
     const r = await mgr.patch(`/projects/${projectId}`, { authority: 'platform' });
     assert.equal(r.data.listings_updated, 1);
-    assert.equal(env.db.get('SELECT authority FROM properties WHERE project_id = ?', projectId).authority, 'platform');
+    assert.equal((await env.db.get('SELECT authority FROM properties WHERE project_id = ?', projectId)).authority, 'platform');
   });
   test('holds cannot be set by editing the listing status', async () => {
-    const p = freeUnit();
+    const p = await freeUnit();
     assert.equal((await mgr.patch(`/properties/${p.id}`, { status: 'reserved' })).data.error.code, 'USE_RESERVATIONS');
   });
 });
 
 describe('reservations (E2)', () => {
   test('AC-RES-01: 30 concurrent holds on one unit → exactly one succeeds, the rest 409 with no side effects', async () => {
-    const p = freeUnit();
+    const p = await freeUnit();
     const callers = [agent, karim, lead, mgr, yousef];
     const results = await Promise.all(Array.from({ length: 30 }, (_, i) => callers[i % callers.length].post('/reservations', { property_id: p.id })));
     const ok = results.filter((r) => r.status === 201);
@@ -150,31 +157,31 @@ describe('reservations (E2)', () => {
     assert.equal(ok.length, 1);
     assert.equal(conflicts.length, 29);
     assert.ok(conflicts.every((r) => ['RESERVATION_CONFLICT', 'UNIT_UNAVAILABLE'].includes(r.data.error.code)));
-    assert.equal(env.db.get(`SELECT COUNT(*) n FROM reservations WHERE property_id = ? AND status = 'held'`, p.id).n, 1);
-    assert.equal(env.db.get('SELECT status FROM properties WHERE id = ?', p.id).status, 'on_hold');
+    assert.equal((await env.db.get(`SELECT COUNT(*) n FROM reservations WHERE property_id = ? AND status = 'held'`, p.id)).n, 1);
+    assert.equal((await env.db.get('SELECT status FROM properties WHERE id = ?', p.id)).status, 'on_hold');
     // The conflict message names the holder's team, not the person.
     const c = conflicts.find((r) => r.data.error.code === 'RESERVATION_CONFLICT');
     if (c) assert.ok(!/Aisha|Karim|Sara|Omar|Yousef/.test(c.data.error.message));
   });
 
-  test('database index blocks a second active reservation even if application checks are bypassed', () => {
-    const r = env.db.get(`SELECT * FROM reservations WHERE status = 'held' LIMIT 1`);
-    assert.throws(() => env.db.run(`INSERT INTO reservations(id, tenant_id, property_id, agent_id, status, authority, created_at, updated_at) VALUES ('dup', ?, ?, ?, 'held', 'platform', 'x', 'x')`, r.tenant_id, r.property_id, r.agent_id), /UNIQUE/);
+  test('database index blocks a second active reservation even if application checks are bypassed', async () => {
+    const r = await env.db.get(`SELECT * FROM reservations WHERE status = 'held' LIMIT 1`);
+    await assert.rejects(() => env.db.run(`INSERT INTO reservations(id, tenant_id, property_id, agent_id, status, authority, created_at, updated_at) VALUES ('dup', ?, ?, ?, 'held', 'platform', 'x', 'x')`, r.tenant_id, r.property_id, r.agent_id), /UNIQUE|duplicate key/);
   });
 
   test('AC-RES-02: an elapsed hold expires, the unit returns to available, and the agent is notified once', async () => {
-    const p = freeUnit('platform');
+    const p = await freeUnit('platform');
     const r = await agent.post('/reservations', { property_id: p.id });
-    env.db.run(`UPDATE reservations SET expires_at = '2020-01-01T00:00:00.000Z' WHERE id = ?`, r.data.item.id);
-    assert.equal(env.app.ctx.sweepReservations(), 1);
-    assert.equal(env.app.ctx.sweepReservations(), 0);
-    assert.equal(env.db.get('SELECT status FROM reservations WHERE id = ?', r.data.item.id).status, 'expired');
-    assert.equal(env.db.get('SELECT status FROM properties WHERE id = ?', p.id).status, 'available');
-    assert.equal(env.db.get(`SELECT COUNT(*) n FROM notifications WHERE dedupe_key = ?`, `res_expired:${r.data.item.id}`).n, 1);
+    await env.db.run(`UPDATE reservations SET expires_at = '2020-01-01T00:00:00.000Z' WHERE id = ?`, r.data.item.id);
+    assert.equal(await env.app.ctx.sweepReservations(), 1);
+    assert.equal(await env.app.ctx.sweepReservations(), 0);
+    assert.equal((await env.db.get('SELECT status FROM reservations WHERE id = ?', r.data.item.id)).status, 'expired');
+    assert.equal((await env.db.get('SELECT status FROM properties WHERE id = ?', p.id)).status, 'available');
+    assert.equal((await env.db.get(`SELECT COUNT(*) n FROM notifications WHERE dedupe_key = ?`, `res_expired:${r.data.item.id}`)).n, 1);
   });
 
   test('AC-RES-03: externally controlled unit is labelled as an internal hold and cannot be confirmed without a reference', async () => {
-    const p = freeUnit('external');
+    const p = await freeUnit('external');
     const r = await agent.post('/reservations', { property_id: p.id });
     assert.equal(r.status, 201);
     assert.equal(r.data.item.label, 'Internal hold — not confirmed with developer');
@@ -186,14 +193,14 @@ describe('reservations (E2)', () => {
     const c = await mgr.post(`/reservations/${id}/confirm`, { external_ref: 'DEV-REF-9' });
     assert.equal(c.status, 200);
     assert.equal(c.data.item.status, 'confirmed'); assert.equal(c.data.item.label, null);
-    assert.equal(env.db.get('SELECT status FROM properties WHERE id = ?', p.id).status, 'reserved');
+    assert.equal((await env.db.get('SELECT status FROM properties WHERE id = ?', p.id)).status, 'reserved');
     assert.equal((await agent.post(`/reservations/${id}/cancel`, { reason: 'x' })).status, 403, 'confirmed needs management to cancel');
     assert.equal((await mgr.post(`/reservations/${id}/cancel`, { reason: 'Buyer withdrew' })).status, 200);
-    assert.equal(env.db.get('SELECT status FROM properties WHERE id = ?', p.id).status, 'available');
+    assert.equal((await env.db.get('SELECT status FROM properties WHERE id = ?', p.id)).status, 'available');
   });
 
   test('renewal: management only, once', async () => {
-    const p = freeUnit('platform');
+    const p = await freeUnit('platform');
     const r = await agent.post('/reservations', { property_id: p.id });
     const id = r.data.item.id;
     assert.equal((await agent.post(`/reservations/${id}/renew`)).status, 403);
@@ -205,36 +212,36 @@ describe('reservations (E2)', () => {
   });
 
   test('unverified imports cannot be held; agents only see their own reservations', async () => {
-    const u = env.db.get(`SELECT p.id FROM properties p JOIN tenants t ON t.id = p.tenant_id WHERE t.slug = 'dara-demo' AND p.authority = 'unverified' AND p.status = 'available' LIMIT 1`);
+    const u = await env.db.get(`SELECT p.id FROM properties p JOIN tenants t ON t.id = p.tenant_id WHERE t.slug = 'dara-demo' AND p.authority = 'unverified' AND p.status = 'available' LIMIT 1`);
     if (u) assert.equal((await agent.post('/reservations', { property_id: u.id })).data.error.code, 'UNVERIFIED_UNIT');
     const mine = await karim.get('/reservations');
     assert.ok(mine.data.items.every((x) => x.agent_id === karim.user.id));
-    const someoneElse = env.db.get('SELECT id FROM reservations WHERE agent_id = ? LIMIT 1', agent.user.id).id;
+    const someoneElse = (await env.db.get('SELECT id FROM reservations WHERE agent_id = ? LIMIT 1', agent.user.id)).id;
     assert.equal((await karim.get(`/reservations/${someoneElse}`)).status, 404);
     assert.equal((await lead.get(`/reservations/${someoneElse}`)).status, 200, 'team lead sees team reservations');
   });
 
   test('holding from a deal moves it to the reservation stage; winning converts the hold; another deal cannot win a held unit', async () => {
-    const p = freeUnit('platform');
-    const c = env.db.get('SELECT id FROM contacts WHERE owner_id = ? LIMIT 1', agent.user.id);
+    const p = await freeUnit('platform');
+    const c = await env.db.get('SELECT id FROM contacts WHERE owner_id = ? LIMIT 1', agent.user.id);
     const d1 = (await agent.post('/deals', { title: 'Res deal', contact_id: c.id, property_id: p.id, value: p.price })).data.item;
     await agent.post(`/deals/${d1.id}/stage`, { stage: 'offer' });
     const r = await agent.post('/reservations', { property_id: p.id, deal_id: d1.id });
     assert.equal(r.status, 201);
-    assert.equal(env.db.get('SELECT stage FROM deals WHERE id = ?', d1.id).stage, 'reservation');
+    assert.equal((await env.db.get('SELECT stage FROM deals WHERE id = ?', d1.id)).stage, 'reservation');
     const d2 = (await agent.post('/deals', { title: 'Other deal', contact_id: c.id, property_id: p.id, value: p.price })).data.item;
     await agent.post(`/deals/${d2.id}/stage`, { stage: 'offer' });
     assert.equal((await agent.post(`/deals/${d2.id}/stage`, { stage: 'won' })).data.error.code, 'UNIT_RESERVED_ELSEWHERE');
-    assert.equal(env.db.get('SELECT stage FROM deals WHERE id = ?', d2.id).stage, 'offer', 'failed win rolled back');
+    assert.equal((await env.db.get('SELECT stage FROM deals WHERE id = ?', d2.id)).stage, 'offer', 'failed win rolled back');
     const won = await agent.post(`/deals/${d1.id}/stage`, { stage: 'won' });
     assert.equal(won.status, 200);
-    assert.equal(env.db.get('SELECT status FROM reservations WHERE id = ?', r.data.item.id).status, 'converted');
-    assert.equal(env.db.get('SELECT status FROM properties WHERE id = ?', p.id).status, p.listing_type === 'rent' ? 'rented' : 'sold');
+    assert.equal((await env.db.get('SELECT status FROM reservations WHERE id = ?', r.data.item.id)).status, 'converted');
+    assert.equal((await env.db.get('SELECT status FROM properties WHERE id = ?', p.id)).status, p.listing_type === 'rent' ? 'rented' : 'sold');
   });
 
   test('cross-tenant: another brokerage cannot see or hold this tenant’s units', async () => {
     const owner = client(env.base); await owner.login('owner@palmcoast.demo');
-    const p = freeUnit('platform');
+    const p = await freeUnit('platform');
     assert.equal((await owner.post('/reservations', { property_id: p.id })).status, 404);
     assert.equal((await owner.get('/reservations')).data.items.length, 0);
     assert.equal((await owner.get('/projects')).data.items.length, 0);
@@ -242,16 +249,16 @@ describe('reservations (E2)', () => {
 });
 
 describe('Dubai compliance reminders (Part G, [Verify])', () => {
-  test('BRN expiring/expired cards notify the person and management once', () => {
-    const sent = env.app.ctx.sweep();
+  test('BRN expiring/expired cards notify the person and management once', async () => {
+    const sent = await env.app.ctx.sweep();
     void sent;
-    const karimId = karim.user.id; const hassan = env.db.get(`SELECT id FROM users WHERE email = 'hassan@dara.demo'`).id;
-    assert.ok(env.db.get(`SELECT id FROM notifications WHERE user_id = ? AND type = 'compliance' AND title LIKE 'Broker card%'`, karimId));
-    assert.ok(env.db.get(`SELECT id FROM notifications WHERE user_id = ? AND type = 'compliance' AND title LIKE 'Broker card (BRN) expired%'`, hassan));
-    assert.ok(env.db.get(`SELECT id FROM notifications WHERE user_id = ? AND type = 'compliance' AND title LIKE 'Karim Nasser:%'`, mgr.user.id));
-    const before = env.db.get(`SELECT COUNT(*) n FROM notifications WHERE type = 'compliance'`).n;
-    env.app.ctx.sweep();
-    assert.equal(env.db.get(`SELECT COUNT(*) n FROM notifications WHERE type = 'compliance'`).n, before, 'no duplicate reminders');
+    const karimId = karim.user.id; const hassan = (await env.db.get(`SELECT id FROM users WHERE email = 'hassan@dara.demo'`)).id;
+    assert.ok(await env.db.get(`SELECT id FROM notifications WHERE user_id = ? AND type = 'compliance' AND title LIKE 'Broker card%'`, karimId));
+    assert.ok(await env.db.get(`SELECT id FROM notifications WHERE user_id = ? AND type = 'compliance' AND title LIKE 'Broker card (BRN) expired%'`, hassan));
+    assert.ok(await env.db.get(`SELECT id FROM notifications WHERE user_id = ? AND type = 'compliance' AND title LIKE 'Karim Nasser:%'`, mgr.user.id));
+    const before = (await env.db.get(`SELECT COUNT(*) n FROM notifications WHERE type = 'compliance'`)).n;
+    await env.app.ctx.sweep();
+    assert.equal((await env.db.get(`SELECT COUNT(*) n FROM notifications WHERE type = 'compliance'`)).n, before, 'no duplicate reminders');
   });
   test('compliance view is scoped and flags states', async () => {
     const m = await mgr.get('/compliance');

@@ -24,23 +24,23 @@ export const passwordPolicy = (pw) => typeof pw === 'string' && pw.length >= 10 
 const sha = (s) => createHash('sha256').update(String(s)).digest('hex');
 export const tokenHash = sha;
 
-export function createSession(db, userId, ttlHours) {
+export async function createSession(db, userId, ttlHours) {
   const token = randomBytes(32).toString('base64url');
   const expires = new Date(Date.now() + ttlHours * 3600_000).toISOString();
-  db.run('INSERT INTO sessions(token_hash, user_id, expires_at, created_at) VALUES (?,?,?,?)', sha(token), userId, expires, nowIso());
+  await db.run('INSERT INTO sessions(token_hash, user_id, expires_at, created_at) VALUES (?,?,?,?)', sha(token), userId, expires, nowIso());
   return { token, expires };
 }
 
-export function sessionUser(db, token) {
+export async function sessionUser(db, token) {
   if (!token) return null;
-  const row = db.get(
+  const row = await db.get(
     `SELECT u.* , s.expires_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?`, sha(token));
   if (!row) return null;
-  if (row.expires_at < nowIso() || !row.active) { db.run('DELETE FROM sessions WHERE token_hash = ?', sha(token)); return null; }
+  if (row.expires_at < nowIso() || !row.active) { await db.run('DELETE FROM sessions WHERE token_hash = ?', sha(token)); return null; }
   return row;
 }
 
-export function destroySession(db, token) { if (token) db.run('DELETE FROM sessions WHERE token_hash = ?', sha(token)); }
+export async function destroySession(db, token) { if (token) await db.run('DELETE FROM sessions WHERE token_hash = ?', sha(token)); }
 
 export function cookieHeader(token, expires, secure) {
   const parts = [`${SESSION_COOKIE}=${token}`, 'Path=/', 'HttpOnly', 'SameSite=Lax', `Expires=${new Date(expires).toUTCString()}`];
