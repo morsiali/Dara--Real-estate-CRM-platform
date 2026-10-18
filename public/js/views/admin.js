@@ -20,13 +20,15 @@ export async function people(root, ctx) {
         h('div.team-cards', tm.items.map((x) => h('div.team-card', h('strong', x.name), h('span', `${x.members} active members`), h('small', `Lead: ${x.lead_name || 'none'}`),
           isAdmin ? h('button.btn.btn-small.btn-ghost', { onclick: () => editTeam(x, u.items) }, t('common.edit')) : null))),
         panel(`People · ${u.items.length}`, h('div.table-wrap', h('table.data',
-          h('thead', h('tr', ['Person', 'Role', 'Team', 'BRN', 'Status', 'Last active', ''].map((x) => h('th', { scope: 'col' }, x)))),
+          h('thead', h('tr', ['Person', 'Role', 'Team', 'BRN', 'Two-step', 'Status', 'Last active', ''].map((x) => h('th', { scope: 'col' }, x)))),
           h('tbody', u.items.map((x) => h('tr', { class: x.active ? '' : 'inactive' },
             h('td', h('span.person', avatar(x.name, x.color, { size: 30, online: x.online }), h('span', h('strong', x.name), h('small', x.email)))),
-            h('td', t('role.' + x.role)), h('td', x.team_name || '—'), h('td', x.brn ? h('span', x.brn, h('small.block', x.brn_expiry ? `exp. ${x.brn_expiry.slice(0, 10)}` : '')) : '—'), h('td', x.active ? badge('active') : badge('deactivated', 'lost')),
+            h('td', t('role.' + x.role)), h('td', x.team_name || '—'), h('td', x.brn ? h('span', x.brn, h('small.block', x.brn_expiry ? `exp. ${x.brn_expiry.slice(0, 10)}` : '')) : '—'),
+            h('td', x.mfa_enabled ? badge('on', 'won') : h('span.muted', 'Off')), h('td', x.active ? badge('active') : badge('deactivated', 'lost')),
             h('td', x.online ? 'Online' : ago(x.last_seen_at)),
             h('td.right', canEdit(x) && x.id !== store.me.id ? h('div.btn-row',
               h('button.btn.btn-small.btn-ghost', { onclick: () => editUser(x, tm.items) }, t('common.edit')),
+              isAdmin && x.mfa_enabled ? h('button.btn.btn-small.btn-ghost', { onclick: () => resetMfa(x) }, 'Reset two-step') : null,
               h('button.btn.btn-small.btn-ghost', { class: x.active ? 'danger' : '', onclick: () => toggleActive(x) }, x.active ? 'Deactivate' : 'Reactivate')) : null))))))),
         panel('Role permissions', h('div.table-wrap', h('table.data.perm',
           h('thead', h('tr', h('th', { scope: 'col' }, 'Action'), perm.roles.map((r) => h('th', { scope: 'col' }, t('role.' + r))))),
@@ -56,6 +58,11 @@ export async function people(root, ctx) {
         { name: 'password', label: 'Reset password (optional)', type: 'text', hint: 'Leave blank to keep the current password. Resetting signs them out.' }],
       submit: async (v) => { const body = { ...v, team_id: v.team_id ?? '', brn_expiry: v.brn_expiry ? `${v.brn_expiry}T12:00:00.000Z` : undefined }; if (!body.password) delete body.password; await patch(`/users/${x.id}`, body); await loadUsers(); toast('Saved'); draw(); },
     });
+  }
+  async function resetMfa(x) {
+    const ok = await confirmModal({ title: `Reset two-step sign-in for ${x.name}?`, body: 'Use this when they’ve lost their phone. They’ll be signed out and can sign in with their password, then set up two-step sign-in again. Check it’s really them before you do this.', confirmLabel: 'Reset', danger: true });
+    if (!ok) return;
+    try { await patch(`/users/${x.id}`, { reset_mfa: true }); await loadUsers(); toast('Two-step sign-in reset'); draw(); } catch (e) { toast(e.message, 'error'); }
   }
   async function toggleActive(x) {
     const ok = await confirmModal({ title: x.active ? `Deactivate ${x.name}?` : `Reactivate ${x.name}?`, body: x.active ? 'They’ll be signed out and can’t sign in. Their records stay in place and can be reassigned.' : 'They’ll be able to sign in again.', confirmLabel: x.active ? 'Deactivate' : 'Reactivate', danger: x.active });

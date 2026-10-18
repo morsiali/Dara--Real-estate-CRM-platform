@@ -97,6 +97,7 @@ export function icon(name, size = 18) {
     search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zm9 2l-4-4', send: 'M4 12l16-8-6 16-2-7z', globe: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18',
     arrowUp: 'M12 19V5m-6 6l6-6 6 6', arrowDown: 'M12 5v14m-6-6l6 6 6-6', match: 'M4 7h10m0 0l-3-3m3 3l-3 3M20 17H10m0 0l3-3m-3 3l3 3',
     phone: 'M5 4h4l2 5-3 2a11 11 0 0 0 5 5l2-3 5 2v4a2 2 0 0 1-2 2A17 17 0 0 1 3 6a2 2 0 0 1 2-2z', chevron: 'M9 6l6 6-6 6', logout: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11',
+    copy: 'M9 9h10v11H9zM5 15V4h10', download: 'M12 4v11M7 10l5 5 5-5M5 20h14', lock: 'M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3',
   };
   return h('span.icon', { 'aria-hidden': 'true', html: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${P[name] || P.layers}"/></svg>` });
 }

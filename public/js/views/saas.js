@@ -148,6 +148,7 @@ export async function workspace(root, ctx) {
               h('div.fact', h('dt', 'Trade licence'), h('dd', ws.trade_licence_no || '—')), h('div.fact', h('dt', 'Licence expiry'), h('dd', ws.trade_licence_expiry ? dateFmt(ws.trade_licence_expiry) : '—', ' ', stateBadge(c.workspace.state))),
               h('div.fact', h('dt', 'RERA office no. (ORN)'), h('dd', ws.orn || '—')), h('div.fact', h('dt', 'Created'), h('dd', dateFmt(ws.created_at)))),
             isAdmin ? h('div', h('button.btn.btn-small', { onclick: () => editWorkspace(ws, draw) }, 'Edit details')) : null))),
+        policiesPanel(ws.policies, store.me.role === 'admin', draw),
         panel('Broker cards (BRN)', c.people.length ? h('div.table-wrap', h('table.data',
           h('thead', h('tr', ['Person', 'Role', 'BRN', 'Expiry', 'Status'].map((x) => h('th', { scope: 'col' }, x)))),
           h('tbody', c.people.map((p) => h('tr', h('td', p.name), h('td', t('role.' + p.role)), h('td', p.brn || '—'), h('td', p.brn_expiry ? dateFmt(p.brn_expiry) : '—'), h('td', stateBadge(p.state)))))))
@@ -161,6 +162,31 @@ export async function workspace(root, ctx) {
   };
   mount(root, body);
   draw();
+}
+
+/** Security & compliance switches (admins change them; everyone with access can see them). */
+function policiesPanel(pol, canEdit, after) {
+  const rows = [
+    { key: 'mfa_required_admins', on: pol.mfa_required_admins, title: 'Require two-step sign-in for administrators',
+      body: 'Administrators must use an authenticator app at every sign-in. Recommended — admins can see and export everything.',
+      offWarn: 'Administrators will be able to sign in with a password only. Turn this off?' },
+    { key: 'policy_block_expired_brn', on: pol.block_expired_brn, title: 'Block holds and new leads for agents with an expired broker card',
+      body: 'When on, an agent whose BRN has expired can’t hold units or receive new leads (round-robin skips them) until it’s renewed. When off, expiry only sends reminders.' },
+    { key: 'policy_block_expired_permit', on: pol.block_expired_permit, title: 'Block holds on listings with an expired advertising permit',
+      body: 'When on, nobody can hold a unit whose permit has expired. When off, expiry only sends reminders.' },
+  ];
+  return panel('Security & compliance policies', h('div.policy-list', rows.map((r) => {
+    const id = `pol-${r.key}`;
+    const input = h('input.switch', { type: 'checkbox', id, role: 'switch', checked: r.on, disabled: !canEdit, 'aria-describedby': `${id}-d` });
+    input.addEventListener('change', async () => {
+      const next = input.checked;
+      if (!next && r.offWarn) { const ok = await confirmModal({ title: 'Turn off the requirement?', body: r.offWarn, confirmLabel: 'Turn off', danger: true }); if (!ok) { input.checked = true; return; } }
+      input.disabled = true;
+      try { await patch('/workspace', { [r.key]: next }); toast(next ? 'Policy on' : 'Policy off'); after(); }
+      catch (e) { input.checked = !next; input.disabled = false; toast(e.message, 'error'); }
+    });
+    return h('div.policy-row', h('div', h('label', { for: id }, h('strong', r.title)), h('p.muted.small', { id: `${id}-d` }, r.body)), input);
+  })), { sub: canEdit ? 'Both compliance blocks are off by default. Changes apply immediately and are recorded in the audit log.' : 'Only administrators can change these.' });
 }
 
 function editWorkspace(ws, after) {

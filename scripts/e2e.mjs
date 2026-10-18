@@ -2,6 +2,7 @@
 // Usage: node scripts/e2e.mjs http://localhost:4310
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
+import { totp } from '../server/services/totp.js';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PW_PATH || 'playwright');
 const base = process.argv[2] || 'http://localhost:4310';
@@ -130,10 +131,10 @@ await step('pipeline: open a deal and see stage history', async () => {
 await step('Arabic switches the layout to RTL', async () => {
   const before = await manager.evaluate(() => document.documentElement.dir);
   await manager.click('.user-menu summary');
-  await manager.click('.menu-item >> nth=1'); // language toggle
+  await manager.click('.menu-item >> nth=2'); // language toggle
   await manager.waitForFunction((b) => document.documentElement.dir !== b, before);
-  if (before === 'rtl') { await manager.click('.user-menu summary'); await manager.click('.menu-item >> nth=1'); await manager.waitForFunction(() => document.documentElement.dir === 'rtl'); }
-  await manager.click('.user-menu summary'); await manager.click('.menu-item >> nth=1'); // back to English for the next run
+  if (before === 'rtl') { await manager.click('.user-menu summary'); await manager.click('.menu-item >> nth=2'); await manager.waitForFunction(() => document.documentElement.dir === 'rtl'); }
+  await manager.click('.user-menu summary'); await manager.click('.menu-item >> nth=2'); // back to English for the next run
   await manager.waitForFunction(() => document.documentElement.dir === 'ltr');
 });
 
@@ -148,12 +149,88 @@ await step('a new brokerage signs up from the landing page and lands in an empty
   await page.fill('#t-password', 'E2ePassword2026');
   await page.check('#t-terms');
   await page.click('#trial-btn');
-  await page.waitForURL('**/app#/home');
+  await page.waitForSelector('#trial-done:has-text("Your workspace is ready")');
+  await page.click('#trial-dev-link'); // development mode shows the emailed confirmation link
+  await page.waitForSelector('.forced-mfa h1:has-text("Turn on two-step sign-in")');
+  assert.ok(await page.locator('.qr-box svg path').count(), 'QR code renders');
+  const key = (await page.locator('.setup-key').textContent()).replace(/\s+/g, '');
+  await page.fill('#mfa-setup-code', totp(key));
+  await page.click('button:has-text("Verify and turn on")');
+  await page.waitForSelector('.recovery-codes li >> nth=7');
+  await page.check('#rc-saved');
+  await page.click('button:has-text("Done")');
   await page.waitForSelector('.sub-banner:has-text("Trial")');
+  assert.equal(await page.locator('.sub-banner.verify').count(), 0, 'email already confirmed');
   await page.waitForSelector('text=Welcome to Dara');
   assert.equal(await page.locator('.side-nav a[href="#/workspace"]').count(), 1);
   await page.goto(base + '/app#/workspace');
   await page.waitForSelector('text=Subscription');
+  await ctx.close();
+});
+
+await step('a user turns on two-step sign-in from the account menu, then signs in with a code', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(`mfa: ${e.message}`));
+  await page.goto(base + '/#signin');
+  await page.fill('#email', 'priya@dara.demo'); await page.fill('#password', 'DaraDemo2026'); await page.click('#signin-btn');
+  await page.waitForSelector('.kpi');
+  await page.click('.user-menu summary');
+  await page.click('.menu-item:has-text("Two-step sign-in")');
+  await page.click('.modal button:has-text("Set up")');
+  const key = (await page.locator('.setup-key').textContent()).replace(/\s+/g, '');
+  await page.fill('#mfa-setup-code', totp(key));
+  await page.click('button:has-text("Verify and turn on")');
+  await page.waitForSelector('.recovery-codes code >> nth=7');
+  const codes = await page.locator('.recovery-codes code').allTextContents();
+  await page.check('#rc-saved'); await page.click('.modal button:has-text("Done")');
+  await page.waitForSelector('.modal .badge:has-text("On")');
+  await page.keyboard.press('Escape');
+  await page.click('.user-menu summary'); await page.click('.menu-item:has-text("Sign out")');
+  await page.waitForURL(base + '/');
+  await page.goto(base + '/#signin');
+  await page.fill('#email', 'priya@dara.demo'); await page.fill('#password', 'DaraDemo2026'); await page.click('#signin-btn');
+  await page.waitForSelector('#mfa-form:not([hidden])');
+  await page.fill('#mfa-code', '000000'); await page.click('#mfa-btn');
+  await page.waitForSelector('#mfa-msg:has-text("isn’t right")');
+  await page.fill('#mfa-code', codes[0]); await page.click('#mfa-btn'); // recovery code path
+  await page.waitForURL('**/app#/home');
+  await page.waitForSelector('.toast:has-text("recovery code")');
+  await ctx.close();
+});
+
+await step('forgot password: request link, set a new password, sign in with it', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(`reset: ${e.message}`));
+  await page.goto(base + '/#signin');
+  await page.fill('#email', 'yousef@dara.demo');
+  await page.click('#forgot-link');
+  await page.click('#forgot-btn');
+  await page.waitForSelector('#forgot-ok a');
+  await page.click('#forgot-ok a');
+  await page.waitForSelector('#reset-form:not([hidden])');
+  assert.ok(!page.url().includes('reset='), 'token is removed from the address bar');
+  await page.fill('#reset-pass', 'YousefNew2026'); await page.fill('#reset-pass2', 'YousefNew2026');
+  await page.click('#reset-btn');
+  await page.waitForSelector('#session-note:has-text("Password changed")');
+  await page.fill('#email', 'yousef@dara.demo'); await page.fill('#password', 'YousefNew2026'); await page.click('#signin-btn');
+  await page.waitForURL('**/app#/home');
+  await ctx.close();
+});
+
+await step('admin sees security policies and the two-step column', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const page = await signIn(ctx, 'admin');
+  await page.goto(base + '/app#/workspace');
+  await page.waitForSelector('text=Security & compliance policies');
+  assert.equal(await page.locator('.switch').count(), 3);
+  await page.check('#pol-policy_block_expired_permit');
+  await page.waitForSelector('.toast:has-text("Policy on")');
+  await page.uncheck('#pol-policy_block_expired_permit');
+  await page.waitForSelector('.toast:has-text("Policy off")');
+  await page.goto(base + '/app#/people');
+  await page.waitForSelector('th:has-text("Two-step")');
   await ctx.close();
 });
 

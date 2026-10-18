@@ -39,3 +39,11 @@ Values: **Own** (records they own) · **Team** (their team) · **Tenant** (whole
 | channels.create | Tenant | Tenant | Team | None |
 
 Additional rules: managers create/edit only agents and team leads (admins: any role); nobody can deactivate themselves or change their own role; a task assignee cannot approve their own task unless management; team leads cannot set their own goals; confirmed reservations are cancelled by management only; any write is refused while the workspace is read-only (except sign-in, sign-out and password change).
+
+## Account security (increment 03)
+| Action | admin | manager | team_lead | agent |
+|---|---|---|---|---|
+| Turn own two-step sign-in on/off | Yes (off only if the workspace doesn't require it) | Yes | Yes | Yes |
+| Reset someone else's two-step sign-in | Yes (not their own) | No | No | No |
+| Change security & compliance policies | Yes | No | No | No |
+| Invite people | Yes, after email is verified | Yes, after email is verified | No | No |

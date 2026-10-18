@@ -255,6 +255,13 @@
           <p class="form-msg" id="trial-msg" role="alert"></p>
           <button class="btn-mint btn-lg" type="submit" id="trial-btn">Create workspace</button>
         </form>
+        <div class="signin-card" id="trial-done" hidden role="status" aria-labelledby="trial-done-h">
+          <h3 id="trial-done-h">Your workspace is ready</h3>
+          <p class="card-lede">We sent a confirmation link to <b id="trial-done-email"></b>. Confirm it to invite your team.</p>
+          <p class="card-lede">Next, you’ll turn on two-step sign-in with an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password…). It’s required for administrators and takes a minute.</p>
+          <p class="dev-note" id="trial-dev" hidden>Development mode — no email is actually sent. <a id="trial-dev-link" href="#">Open the confirmation link</a></p>
+          <a class="btn-mint btn-lg" href="/app#/home">Continue to set up</a>
+        </div>
       </div>
     </section>
 
@@ -280,6 +287,40 @@
           <input id="password" name="password" type="password" autocomplete="current-password" required>
           <p class="form-msg" id="signin-msg" role="alert"></p>
           <button class="btn-mint btn-lg" type="submit" id="signin-btn">Sign in</button>
+          <button class="link-btn" type="button" id="forgot-link">Forgot your password?</button>
+        </form>
+
+        <form class="signin-card" id="mfa-form" novalidate hidden aria-labelledby="mfa-h">
+          <h3 id="mfa-h">Two-step sign-in</h3>
+          <p class="card-lede">Enter the 6-digit code from your authenticator app. Lost your phone? Use one of your recovery codes instead.</p>
+          <label for="mfa-code">Code</label>
+          <input id="mfa-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="12" required>
+          <p class="form-msg" id="mfa-msg" role="alert"></p>
+          <button class="btn-mint btn-lg" type="submit" id="mfa-btn">Verify and sign in</button>
+          <button class="link-btn" type="button" data-back>Back to sign in</button>
+        </form>
+
+        <form class="signin-card" id="forgot-form" novalidate hidden aria-labelledby="forgot-h">
+          <h3 id="forgot-h">Reset your password</h3>
+          <p class="card-lede">Enter your work email and we’ll send a link to choose a new password. The link works once, for one hour.</p>
+          <label for="forgot-email">Work email</label>
+          <input id="forgot-email" name="email" type="email" autocomplete="username" required>
+          <p class="form-msg" id="forgot-msg" role="alert"></p>
+          <p class="form-ok" id="forgot-ok" role="status"></p>
+          <button class="btn-mint btn-lg" type="submit" id="forgot-btn">Send reset link</button>
+          <button class="link-btn" type="button" data-back>Back to sign in</button>
+        </form>
+
+        <form class="signin-card" id="reset-form" novalidate hidden aria-labelledby="reset-h">
+          <h3 id="reset-h">Choose a new password</h3>
+          <p class="card-lede">At least 10 characters with letters and numbers. You’ll be signed out on every other device.</p>
+          <label for="reset-pass">New password</label>
+          <input id="reset-pass" name="password" type="password" autocomplete="new-password" required>
+          <label for="reset-pass2">Repeat it</label>
+          <input id="reset-pass2" name="password2" type="password" autocomplete="new-password" required>
+          <p class="form-msg" id="reset-msg" role="alert"></p>
+          <button class="btn-mint btn-lg" type="submit" id="reset-btn">Save new password</button>
+          <button class="link-btn" type="button" data-back>Back to sign in</button>
         </form>
       </div>
     </section>

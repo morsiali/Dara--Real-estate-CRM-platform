@@ -2,7 +2,7 @@
 
 Dara is a multi-tenant SaaS CRM for Dubai brokerages. It connects leads, listings, projects, reservations, deals and the people working them. It has a public landing page with role-based sign-in, a main dashboard everyone sees, and a personal dashboard for each member that reports to management. It also includes team control, task assignment with manager review, calendars and meeting tracking, time insights, real-time team chat, a leaderboard with achievements, and administration.
 
-**No npm dependencies.** It runs on Node.js's built-in HTTP server and SQLite.
+**No runtime dependencies for local use.** It runs on Node.js's built-in HTTP server and SQLite. For production it runs on **PostgreSQL with row-level security** (the optional `pg` driver is the only runtime package).
 
 ## Run it
 
@@ -10,13 +10,24 @@ Requirements: **Node.js 22.13 or newer** (`node --version`). Get it from https:/
 
 ```bash
 npm start            # http://localhost:4310 — creates ./data/dara.db and loads synthetic demo data on first run
-npm test             # 95 automated tests (unit + API + SaaS/reservations + migrations)
+npm install          # once — adds the Postgres driver and the in-process Postgres used by tests (optional for SQLite-only use)
+npm test             # 110 automated tests on SQLite
+npm run test:pg      # the same suites + row-level-security tests on in-process PostgreSQL (117 tests)
 npm run seed         # wipe the database and reload fresh demo data (dates relative to today)
 ```
 
+### Run on PostgreSQL (production setup) with Docker
+```bash
+cp .env.example .env     # then set POSTGRES_PASSWORD, DARA_DB_PASSWORD and DARA_SECRET_KEY (openssl rand -base64 32)
+docker compose up --build
+```
+Open http://localhost:4310. The stack has the app plus PostgreSQL 16. The app connects as a non-superuser and every request runs inside the tenant's row-level-security context. The compose file loads the synthetic demo by default (`SEED_ON_EMPTY=1`) and shows email links on screen (`DEV_LINKS=1`); set both to `0` for anything except a private demo.
+
+Without Docker: point `DATABASE_URL` at your Postgres. Use a **non-superuser** role — superusers bypass row-level security. `docker/initdb.sh` shows the roles to create.
+
 On Windows you can also double-click **`start-windows.bat`**.
 
-**Upgrading from the first version?** Your existing `data/dara.db` migrates automatically on start. To see the new demo projects, reservations and second brokerage, run `npm run seed` once. This wipes the demo database and reloads it.
+**Upgrading?** Your existing `data/dara.db` migrates automatically on start, and existing accounts are marked as email-verified. To see the new demo projects, reservations and second brokerage, run `npm run seed` once. This wipes the demo database and reloads it.
 
 ### Demo sign-ins (synthetic data)
 Every account's password is `DaraDemo2026`.
@@ -31,6 +42,8 @@ Every account's password is `DaraDemo2026`.
 | Second brokerage (trial) | `owner@palmcoast.demo` | A separate, isolated workspace on a trial plan |
 
 Other demo agents: karim, priya, yousef, elena, hassan, and team lead daniel — all `@dara.demo`.
+
+Demo workspaces don't force two-step sign-in, so you can click straight in. **New workspaces created from "Start a trial" do**: the owner confirms their email and sets up an authenticator app before entering. No real emails are sent — they're written to `data/outbox/`, and in development the link is also shown on screen.
 
 ## What's inside
 - **Main dashboard (everyone):** company KPIs with change vs the previous period, an activity trend, closed volume, pipeline by stage, top performers, recent wins, announcements and your agenda for the day. Period switch: today, week, month, quarter, year.
@@ -49,25 +62,34 @@ Other demo agents: karim, priya, yousef, elena, hassan, and team lead daniel —
 - **Projects:** each project decides who controls availability ("we do" vs "the developer does"), and its listings follow that setting.
 - **Reservations:** hold → submit deposit → management confirms with a developer reference. Holds last 48 hours, with one renewal. The database blocks two active holds on one unit. Developer-controlled holds are labelled "Internal hold — not confirmed with developer".
 - **Dubai compliance tracking:** trade licence, RERA ORN, agent BRN and advertising permits, with expiry reminders. These are tracked only; all requirements are to be verified with counsel.
+- **Sign-in security:** two-step sign-in with an authenticator app (QR code or setup key) and 8 one-time recovery codes. It is required for administrators of new workspaces (a workspace switch). Also: email verification at signup, forgot/reset password by email link, and an admin "Reset two-step sign-in" for lost phones. Two-step secrets are encrypted at rest.
+- **Compliance switches (off by default):** block holds and new leads for agents with an expired broker card; block holds on listings with an expired advertising permit.
+- **Tenant isolation in the database:** on PostgreSQL, every table has forced row-level security, so a query without a tenant filter still returns only that brokerage's rows.
 - **Arabic (RTL)** toggle in the user menu (draft translation).
 
 ## Project layout
 ```
 server/   HTTP pipeline, auth, RBAC, routes, domain services, migrations, seed
 public/   landing page + workspace SPA (vanilla ES modules, SVG charts)
-tests/    node:test unit + API + migration tests
-scripts/  dev helpers: e2e.mjs (Playwright browser flows), screens.mjs (screenshots)
+tests/    node:test unit + API + security + RLS + migration tests (SQLite and PGlite)
+scripts/  e2e.mjs (Playwright browser flows), screens.mjs (screenshots), test-pg.mjs, check-awaits.mjs
+docker/   initdb.sh — Postgres roles (non-superuser owner + app role)
 docs/     master-prompt state files: SCOPE, DECISIONS, ASSUMPTIONS, QUESTIONS, CAPABILITIES, METRICS, RISKS, CHANGELOG
 ```
 
 ## Configuration
-Copy `.env.example` to `.env` to change `PORT`, `DB_FILE`, session lifetime or demo seeding. Set `NODE_ENV=production` only behind HTTPS, so cookies are marked Secure.
+Copy `.env.example` to `.env`. Every setting is explained there. Main ones:
+- `DATABASE_URL` switches to PostgreSQL.
+- `DARA_SECRET_KEY` is required in production; it encrypts two-step secrets.
+- `PUBLIC_URL` is the base for emailed links.
+- `NODE_ENV=production` turns on Secure cookies and turns off the demo seed and on-screen email links.
 
 ## Honest status
-This is a working prototype on **synthetic data**, verified locally (see `docs/CAPABILITIES.md`). It is **not** production-ready. Before selling it needs:
-- **Postgres with row-level security** — the multi-tenant isolation is currently enforced in application code only
-- An identity provider with MFA, and email verification on signup
-- A payment provider and confirmed pricing
-- A hosting region and data-protection decision
-- A backup/restore drill, an accessibility audit and a native-speaker Arabic review
-- Counsel's confirmation of every UAE regulatory item The blocking product decisions are in `docs/QUESTIONS.md`.
+This is a working product on **synthetic data**, verified locally and against a real PostgreSQL 16 server (see `docs/CAPABILITIES.md`). Before selling it still needs:
+- **A mail provider** for real email delivery (currently a local outbox), and optionally Microsoft/Google single sign-on
+- **Pricing and a payment provider** (plans are proposed; no payments are taken)
+- **A hosting region and data-protection decision** (UAE region? PDPL / DIFC / ADGM)
+- A first `docker compose up` on your machine (the image wasn't built in my environment), a backup/restore drill, an accessibility audit and a native-speaker Arabic review
+- Counsel's confirmation of every UAE regulatory item
+
+The open product decisions are in `docs/QUESTIONS.md`.

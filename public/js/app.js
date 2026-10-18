@@ -3,6 +3,7 @@ import { get, post, patch } from './api.js';
 import { h, mount, icon, avatar, toast, formModal, ago, clear } from './ui.js';
 import { t, setLang, getLang, applyDir } from './i18n.js';
 import * as views from './views/index.js';
+import { forcedSetupScreen, securityDialog, verifyBanner, recoveryReminder } from './security.js';
 
 export const store = {
   me: null, team: null, tenant: null, perms: {}, users: [], usersById: new Map(), online: new Set(),
@@ -67,6 +68,7 @@ function buildShell() {
     h('div.user-pop',
       h('div.user-head', h('strong', me.name), h('span', `${t('role.' + me.role)}${store.team ? ' · ' + store.team.name : ''}`)),
       h('button.menu-item', { onclick: changePassword }, icon('key'), t('common.password')),
+      h('button.menu-item', { onclick: () => { userMenu.open = false; securityDialog(store); } }, icon('lock'), t('common.mfa'), h('span.menu-state', me.mfa_enabled ? 'On' : 'Off')),
       h('button.menu-item', { onclick: () => { setLang(getLang() === 'ar' ? 'en' : 'ar'); patch('/auth/me', { locale: getLang() }).catch(() => {}); rebuild(); } }, icon('globe'), t('common.language')),
       h('button.menu-item', { onclick: signOut }, icon('logout'), t('common.signout'))));
   els.menuBtn = h('button.icon-btn.menu-toggle', { 'aria-label': 'Menu', 'aria-expanded': 'false', onclick: () => { const open = shell.classList.toggle('nav-open'); els.menuBtn.setAttribute('aria-expanded', String(open)); } }, icon('menu'));
@@ -79,6 +81,7 @@ function buildShell() {
     h('div.main-col',
       h('header.topbar', els.menuBtn, h('div.title-wrap', els.title), els.actions, h('div.top-tools', els.notifBtn, els.notifPanel, userMenu)),
       subscriptionBanner(),
+      verifyBanner(store.me),
       els.main));
   shell.removeAttribute('aria-busy');
   shell.addEventListener('click', (e) => { if (e.target.closest('.side-nav a')) shell.classList.remove('nav-open'); });
@@ -209,6 +212,7 @@ async function boot() {
     const me = await get('/auth/me');
     Object.assign(store, { me: me.user, team: me.team, tenant: me.tenant, perms: me.permissions });
   } catch { location.href = '/#signin'; return; }
+  if (store.me.mfa_setup_required) { forcedSetupScreen(document.getElementById('shell'), store.me, store.tenant?.name); return; }
   if (store.me.locale && store.me.locale !== getLang()) { try { if (!localStorage.getItem('dara.lang')) setLang(store.me.locale); } catch { /* ignore */ } }
   if (!store.me.platform_admin) await loadUsers().catch(() => {});
   buildShell();
@@ -217,6 +221,8 @@ async function boot() {
   refreshNotifs(); if (!store.me.platform_admin) refreshBadges();
   connectStream();
   if (!store.me.platform_admin) setInterval(refreshBadges, 60_000);
+  recoveryReminder();
+  if (parseHash().query.verified === '1') { toast('Email confirmed. You can now invite your team.'); history.replaceState(null, '', '#/home'); }
   if (store.me.must_change_password) { toast('Choose a new password to secure your account.', 'info'); changePassword(); }
 }
 

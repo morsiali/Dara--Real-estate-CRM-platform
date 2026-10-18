@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-19 — Increment 03: PostgreSQL + RLS, sign-in security, compliance switches, Docker
+- **Changed:** Async data layer over SQLite and PostgreSQL. Migrations `003`/`004` (Postgres RLS on every table; auth tables). Two-step sign-in with recovery codes, email verification, forgot/reset password, admin reset, two compliance switches (off by default), Docker + compose. New UI: sign-in second step, forgot/reset forms, signup confirmation, forced setup screen for admins, Two-step sign-in dialog, verification banner, policy switches, People two-step column. Report: `docs/increments/03-postgres-rls-auth.md`.
+- **Evidence:** `npm test` → 110/110 (SQLite). `npm run test:pg` → 117/117 (PGlite, RLS enforced). `node scripts/e2e.mjs` → 16/16 on SQLite and 16/16 on a real PostgreSQL 16 server, no browser errors.
+- **Status changes:** ADR-012 superseded by ADR-013. CAP-036…040 → Verified locally. CAP-041 (Docker) → Implemented — unverified.
+- **Open blocking questions:** Q-13 hosting region / data-protection regime · Q-14 pricing and payment provider · Q-09 SSO provider (optional) · mail provider for real email delivery.
+
 ## 2026-10-19 — Increment 02: SaaS, projects, reservations, Dubai compliance
 - **Changed:** Operator answered Q-01…Q-05. Added migration `002`. Added self-signup and trial, entitlements, read-only mode, export, platform console, projects with availability authority, reservations (E2), Dubai compliance reminders, and a second synthetic tenant plus a platform tenant. Added new screens (Projects, Reservations, Workspace & compliance, Platform console) and landing sections (Plans, Start a trial). Report: `docs/increments/02-saas-reservations.md`.
 - **Evidence:** `npm test` → 95 tests, 95 passed, 0 failed. `node scripts/e2e.mjs` → 13/13 PASS, no browser errors.

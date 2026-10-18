@@ -227,3 +227,15 @@ section { scroll-margin-top: 70px; }
 .hint { color: var(--ink-2); font-size: 13px; }
 @media (max-width: 1020px) { .plan-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .plan-grid, .two-inputs { grid-template-columns: 1fr; } }
+
+/* Sign-in flow: second step, forgot/reset, signup confirmation */
+.signin-card[hidden] { display: none; }
+.signin-card h3 { margin: 0 0 2px; font: 700 22px var(--display); }
+.card-lede { margin: 0 0 6px; color: var(--ink-2); font-size: 15px; line-height: 1.5; }
+.link-btn { background: none; border: 0; padding: 6px 0; color: #2a46c9; font: 600 14.5px var(--body); cursor: pointer; align-self: center; text-decoration: underline; text-underline-offset: 3px; }
+.link-btn:hover { color: #10297e; }
+.link-btn:focus-visible { outline: 3px solid #8fa6ff; outline-offset: 2px; border-radius: 6px; }
+.form-ok { color: #0f7a52; font-weight: 600; font-size: 14.5px; margin: 0; min-height: 0; }
+.form-ok:empty { display: none; }
+.dev-note { background: #fff8e1; border: 1px solid #f1d58a; border-radius: 12px; padding: 10px 12px; font-size: 14px; margin: 4px 0; }
+#mfa-code { letter-spacing: .3em; font: 600 22px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; }

@@ -1,0 +1,52 @@
+# Local / staging stack: Dara + PostgreSQL 16 with row-level security.
+#   1. cp .env.example .env   and set POSTGRES_PASSWORD, DARA_DB_PASSWORD, DARA_SECRET_KEY
+#   2. docker compose up --build
+#   3. open http://localhost:4310
+# No real emails are sent: verification and reset emails are written to the "outbox" volume.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      DARA_DB_PASSWORD: ${DARA_DB_PASSWORD:?set DARA_DB_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/initdb.sh:/docker-entrypoint-initdb.d/10-dara-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d dara"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # Not published to the host. Uncomment for local inspection only:
+    # ports: ["127.0.0.1:5432:5432"]
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4310
+      # The app connects as the non-superuser owner and switches to dara_app inside every transaction.
+      DATABASE_URL: postgres://dara_owner:${DARA_DB_PASSWORD}@db:5432/dara
+      PG_APP_ROLE: dara_app
+      DARA_SECRET_KEY: ${DARA_SECRET_KEY:?set DARA_SECRET_KEY in .env (openssl rand -base64 32)}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:4310}
+      OUTBOX_DIR: /app/data/outbox
+      # Demo conveniences — set both to 0 for anything other than a private local demo.
+      SEED_ON_EMPTY: ${SEED_ON_EMPTY:-1}
+      DEV_LINKS: ${DEV_LINKS:-1}
+      # Secure cookies need HTTPS; browsers treat http://localhost as secure, so this works locally too.
+      COOKIE_SECURE: ${COOKIE_SECURE:-1}
+    ports:
+      - "127.0.0.1:${APP_PORT:-4310}:4310"
+    volumes:
+      - outbox:/app/data
+
+volumes:
+  pgdata:
+  outbox:

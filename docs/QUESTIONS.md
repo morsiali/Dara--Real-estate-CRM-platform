@@ -10,10 +10,10 @@
 | Q-06 | What do you use today, and do we need to migrate data (CSV/CRM export)? | Reversible default | Import tooling | No migration | 1 | Open |
 | Q-07 | Which channels are required in Release 2 (WhatsApp Business, email, SMS, portals)? Which provider accounts exist? | Deferred (R2) | Comms adapters | None | 1 | Open |
 | Q-08 | Confirm the point values and achievements, and whether points should be visible company-wide | Reversible default | Leaderboard incentives | Visible to all; values in `POINT_RULES` | 1 | Open |
-| Q-09 | Is MFA required for administrators at launch? Which identity provider (Microsoft 365, Google)? | Blocking before production | Auth adapter | Password + scrypt; no MFA | 2 | Open |
+| Q-09 | Is MFA required for administrators at launch? Which identity provider (Microsoft 365, Google)? | Blocking before production | Auth adapter | Built-in TOTP two-step sign-in, required for admins by default (ADR-014) | 2 | Partly answered by default — SSO provider still open |
 | Q-10 | Expected volumes: contacts, listings, messages per month, concurrent users? | Reversible default | DB choice (SQLite → Postgres) | <50 concurrent users | 2 | Open |
 | Q-11 | Who will review the Arabic translation? | Deferred | Localization quality | Draft strings | 2 | Open |
 | Q-12 | Which RERA/DLD fields are mandatory for you (BRN, ORN, Trakheesi permit enforcement)? | Deferred | Part G rules (all `[Verify]`) | Permit number recorded, not enforced | 2 | Open |
 | Q-13 | Where should production be hosted (UAE cloud region required?), and under which data-protection regime are the brokerages (PDPL / DIFC / ADGM)? | **Blocking before production** | Hosting, DPA terms | Local machine only | 2 | Open |
 | Q-14 | What pricing do you want to test (per seat vs per plan; monthly vs annual), and which payment provider? | **Blocking before charging** | Part F billing adapter | No prices shown; manual status changes | 2 | Open |
-| Q-15 | Should holds be blocked for agents whose BRN has expired, and should listings without a valid permit be hidden from public sharing? | Reversible default (needs counsel) | Part G enforcement | Reminders only, nothing blocked | 2 | Open |
+| Q-15 | Should holds be blocked for agents whose BRN has expired, and should listings without a valid permit be hidden from public sharing? | Reversible default (needs counsel) | Part G enforcement | Two workspace switches, both off by default (ADR-015) | 2 | Default built — needs counsel |
