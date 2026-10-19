@@ -1,0 +1,43 @@
+# Render Blueprint — one-click deploy of Dara (web service + PostgreSQL 16 with row-level security).
+# Deploy: https://dashboard.render.com/blueprint/new → choose this repository → Apply.
+# Region: Frankfurt (closest Render region to Dubai; Render has no UAE region — see docs/QUESTIONS.md Q-13).
+# Plans start on "free" for evaluation: the app sleeps after 15 min idle and the free database expires after 30 days.
+# Upgrade both to paid plans in the Render dashboard before real use.
+services:
+  - type: web
+    name: dara-crm
+    runtime: node
+    region: frankfurt
+    plan: free
+    buildCommand: npm ci --omit=dev --no-audit --no-fund
+    startCommand: node --disable-warning=ExperimentalWarning server/index.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22.14.0
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: dara-db
+          property: connectionString
+      - key: DARA_SECRET_KEY        # encrypts two-step sign-in secrets; generated once by Render, keep it
+        generateValue: true
+      - key: SEED_ON_EMPTY          # load the synthetic demo workspace on first start
+        value: "1"
+      - key: DEV_LINKS              # no email provider yet: show the verification link to the new owner on screen
+        value: "1"
+      - key: DEV_RESET_LINKS        # must stay 0 on a public server
+        value: "0"
+      - key: PG_POOL_MAX
+        value: "5"
+
+databases:
+  - name: dara-db
+    region: frankfurt
+    plan: free
+    postgresMajorVersion: "16"
+    databaseName: dara
+    user: dara
+    ipAllowList: []   # reachable only from Render services, not the internet

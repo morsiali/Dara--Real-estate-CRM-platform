@@ -22,7 +22,7 @@ CREATE TABLE auth_tokens (
 CREATE UNIQUE INDEX ux_auth_tokens_hash ON auth_tokens(token_hash);
 CREATE INDEX ix_auth_tokens_user ON auth_tokens(user_id, purpose);
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON auth_tokens TO :app_role;
+DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = ':app_role') THEN GRANT SELECT, INSERT, UPDATE, DELETE ON auth_tokens TO :app_role; END IF; END $$;
 ALTER TABLE auth_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE auth_tokens FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON auth_tokens

@@ -77,6 +77,7 @@
   - System context (RLS lifted) is used only for: session lookup, sign-in, signup, password reset, email verification, the global email-uniqueness check, background sweeps and the platform console (aggregates only, after the platform-staff check).
   - Production role model: the app connects as a **non-superuser** owner (`dara_owner`) and switches to `dara_app` per transaction. Superusers bypass RLS, so the app must never connect as one. Verified on PostgreSQL 16: with no context the owner sees 0 rows; `SET ROLE postgres` is refused.
 - Limitation (stated honestly): RLS here protects against **application bugs** (a missing `WHERE tenant_id`), not against an attacker who can run arbitrary SQL as the app — the context settings are ordinary session settings. All SQL is parameterized; there is no raw SQL input anywhere.
+- Managed hosts (Render) may not allow `CREATE ROLE`. In that case the migration skips the app role, and the app runs as the database owner, which is a non-superuser. **FORCE ROW LEVEL SECURITY still applies the policies to it** (verified on PostgreSQL 16: the owner with no context sees 0 rows; the e2e suite passed 16/16 in this mode). At startup the server refuses to run if it would be a superuser or `BYPASSRLS` without an app role, and it logs which mode it is in.
 - Alternatives rejected: Postgres schema-per-tenant (migration fan-out, connection overhead); app-level filtering only (C13).
 - Reversibility: Reversible. SQLite remains supported for local use.
 

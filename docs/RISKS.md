@@ -14,4 +14,5 @@
 | RISK-10 | Signup abuse (fake workspaces) | M | M | Signup throttle (5/hour/IP), terms checkbox, platform suspension, email verification (owners can't invite until verified) | Eng | Before public launch |
 | RISK-11 | RLS context settings can be changed by any SQL running as the app role | L | H | All SQL parameterized; no raw SQL input; app never connects as superuser; RLS is defence against app bugs (ADR-013) | Lead engineer | Any feature that accepts query text |
 | RISK-12 | Losing or rotating `DARA_SECRET_KEY` makes stored two-step secrets unreadable | M | M | Keep it in a secrets manager with backup; recovery path = admin reset + re-setup | Operator | Key rotation |
-| RISK-13 | `DEV_LINKS=1` on a public server would expose reset links in API responses | L | H | Off by default in production; startup warning when on | Operator | Every deployment |
+| RISK-13 | `DEV_RESET_LINKS=1` on a public server would let anyone reset any account | L | H | Separate from `DEV_LINKS`, off in production and set to 0 in `render.yaml`; startup warning when on | Operator | Every deployment |
+| RISK-14 | Public demo uses a published password; visitors can change the demo workspace | H | L | Synthetic data only; recreate the database to reset; real customers use their own trial workspace | Operator | Before sharing widely |

@@ -186,6 +186,23 @@ function makePostgres(driver, { appRole = null } = {}) {
       return m.name;
     },
     async tableExists(name) { return !!(await db.get(`SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = ?`, name)); },
+    /**
+     * Startup safety check for tenant isolation. Uses the app role when the connection may assume it; otherwise
+     * relies on FORCE ROW LEVEL SECURITY applying to the (non-superuser) owner. Refuses to run where RLS would be bypassed.
+     */
+    async verifyIsolation() {
+      const raw = (sql, p) => (driver.kind === 'pglite' ? driver.pglite.query(sql, p) : driver.pool.query(sql, p));
+      const me = (await raw(`SELECT current_user AS u, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user`)).rows[0];
+      let mode = 'app_role';
+      if (appRole) {
+        const ok = (await raw(`SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1) AND pg_has_role(current_user, $1, 'MEMBER') AS ok`, [appRole])).rows[0]?.ok;
+        if (!ok) { appRole = null; mode = 'owner_forced'; }
+      } else mode = 'owner_forced';
+      if (!appRole && (me.rolsuper || me.rolbypassrls)) {
+        throw new Error(`Database user "${me.u}" is a superuser or has BYPASSRLS, and no app role is available, so row-level security would not apply. Connect as a non-superuser (see docker/initdb.sh).`);
+      }
+      return { mode, user: me.u, appRole };
+    },
     close: async () => { if (driver.kind === 'pglite') await driver.pglite.close(); else await driver.pool.end(); },
   };
   return db;
@@ -219,5 +236,6 @@ export async function openDb(opts = {}) {
   const appRole = opts.appRole ?? process.env.PG_APP_ROLE ?? 'dara_app';
   const db = opts.url ? await openPostgres(opts.url, { appRole }) : opts.pglite ? await openPglite({ appRole }) : await openSqlite(opts.file ?? ':memory:');
   await db.migrateUp();
+  if (db.dialect === 'postgres') db.isolation = await db.verifyIsolation();
   return db;
 }

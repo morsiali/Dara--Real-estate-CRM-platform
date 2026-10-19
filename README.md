@@ -6,6 +6,14 @@ Dara is a multi-tenant SaaS CRM for Dubai brokerages. It connects leads, listing
 
 ## Run it
 
+### Public link on Render (app + PostgreSQL)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/morsiali/Dara-CRM)
+
+Click the button (or go to Render → **New → Blueprint** and pick this repository), then click **Apply**. Render reads `render.yaml`, creates the PostgreSQL 16 database and the web service, generates `DARA_SECRET_KEY`, and loads the synthetic demo. The first build takes about 5 minutes. Your link is `https://dara-crm.onrender.com`, or a variant if that name is taken.
+- Free plans are for evaluation only: the app sleeps after 15 minutes idle (about a minute to wake) and the free database is deleted after 30 days. Upgrade both in the dashboard for real use.
+- No real emails are sent yet, so **forgot password does not deliver a link on Render**. The new-workspace verification link is shown on screen to its owner.
+- Demo accounts use a public password. Anyone with the link can sign in to the demo workspace, so don't put real client data in it.
+
 ### Live in your browser (GitHub Codespaces)
 On the repository page: **Code → Codespaces → Create codespace on main**. It installs, seeds the synthetic demo and opens Dara on port 4310 (about 2 minutes the first time). To share the link with someone, open the **Ports** tab, right-click port 4310 → **Port visibility → Public**. The codespace stops when idle; reopening it restarts the app.
 

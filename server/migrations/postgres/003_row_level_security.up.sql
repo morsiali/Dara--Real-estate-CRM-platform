@@ -1,11 +1,27 @@
 -- 003 (PostgreSQL only): row-level security. Every tenant-owned row is visible/writable only when
 -- app.tenant_id matches, or when app.bypass_rls = 'on' (system work: sign-in lookup, signup, platform console, sweeps).
 -- FORCE makes the table owner subject to the policies too; superusers always bypass RLS, so never connect as one.
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = ':app_role') THEN CREATE ROLE :app_role NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF; END $$;
-GRANT :app_role TO CURRENT_USER;
-GRANT USAGE ON SCHEMA public TO :app_role;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO :app_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :app_role;
+-- The app role is optional: managed hosts (e.g. Render) may not allow CREATE ROLE. Then the app runs as the
+-- non-superuser owner, and FORCE ROW LEVEL SECURITY still applies the policies to it (the server checks this at start).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = ':app_role') THEN
+    BEGIN
+      CREATE ROLE :app_role NOLOGIN NOSUPERUSER NOBYPASSRLS;
+    EXCEPTION WHEN insufficient_privilege THEN
+      RAISE NOTICE 'Cannot create role :app_role; RLS will be enforced on the owner role (FORCE).';
+      RETURN;
+    END;
+  END IF;
+  BEGIN
+    GRANT :app_role TO CURRENT_USER;
+  EXCEPTION WHEN insufficient_privilege OR invalid_grant_operation THEN
+    RAISE NOTICE 'Cannot grant :app_role to the current user; RLS will be enforced on the owner role (FORCE).';
+  END;
+  GRANT USAGE ON SCHEMA public TO :app_role;
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO :app_role;
+  ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :app_role;
+END $$;
 
 ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenants FORCE ROW LEVEL SECURITY;
@@ -86,4 +102,4 @@ ALTER TABLE goals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE goals FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON goals USING (current_setting('app.bypass_rls', true) = 'on' OR EXISTS (SELECT 1 FROM users x WHERE x.id = goals.user_id)) WITH CHECK (current_setting('app.bypass_rls', true) = 'on' OR EXISTS (SELECT 1 FROM users x WHERE x.id = goals.user_id));
 -- schema_migrations is not tenant data; the app role only reads it.
-REVOKE INSERT, UPDATE, DELETE ON schema_migrations FROM :app_role;
+DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = ':app_role') THEN REVOKE INSERT, UPDATE, DELETE ON schema_migrations FROM :app_role; END IF; END $$;

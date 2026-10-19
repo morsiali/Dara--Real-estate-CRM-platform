@@ -203,7 +203,7 @@ export function registerAuth(router, ctx) {
       const url = `${ctx.cfg.publicUrl}/#reset=${raw}`;
       await ctx.cfg.mailer.send({ to: u.email, subject: 'Reset your Dara password', text: `Hi ${u.name},\n\nUse this link within 1 hour to choose a new password:\n${url}\n\nIf you didn’t ask for this, you can ignore this email — your password hasn’t changed.` });
       await audit(ctx, u, 'auth.reset_requested', 'user', u.id);
-      if (ctx.cfg.devLinks) dev_url = url;
+      if (ctx.cfg.devResetLinks ?? ctx.cfg.devLinks) dev_url = url; // never on a public server: it would let anyone reset any account
     }
     return { ok: true, message: 'If that email has an account, a reset link is on its way.', ...(dev_url ? { dev_url } : {}) };
   }, { public: true, system: true, allowReadOnly: true });

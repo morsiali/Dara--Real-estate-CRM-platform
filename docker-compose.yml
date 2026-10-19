@@ -40,6 +40,7 @@ services:
       # Demo conveniences — set both to 0 for anything other than a private local demo.
       SEED_ON_EMPTY: ${SEED_ON_EMPTY:-1}
       DEV_LINKS: ${DEV_LINKS:-1}
+      DEV_RESET_LINKS: ${DEV_RESET_LINKS:-1}   # localhost only — never on a public server
       # Secure cookies need HTTPS; browsers treat http://localhost as secure, so this works locally too.
       COOKIE_SECURE: ${COOKIE_SECURE:-1}
     ports:

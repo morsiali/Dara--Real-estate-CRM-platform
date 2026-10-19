@@ -30,9 +30,12 @@ const { server, hub, ctx } = createApp(db, {
   sessionTtlHours: Number(process.env.SESSION_TTL_HOURS || 168),
   secureCookies: flag('COOKIE_SECURE', PROD),
   // GitHub Codespaces: emailed links point at the forwarded URL automatically.
-  publicUrl: process.env.PUBLIC_URL || (process.env.CODESPACE_NAME && process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN
+  publicUrl: process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || (process.env.CODESPACE_NAME && process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN
     ? `https://${process.env.CODESPACE_NAME}-${PORT}.${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}` : `http://localhost:${PORT}`),
-  devLinks: flag('DEV_LINKS', !PROD), // verification/reset links are also shown in the UI (no email provider yet). Never on a public deployment.
+  // No email provider yet, so links can also be shown on screen. Verification links only ever go to the signed-in
+  // owner of that account; password-reset links would let anyone reset any account, so they are separate and off in production.
+  devLinks: flag('DEV_LINKS', !PROD),
+  devResetLinks: flag('DEV_RESET_LINKS', !PROD),
   mailer: createOutbox(resolve(process.env.OUTBOX_DIR || './data/outbox')),
 });
 
@@ -42,7 +45,7 @@ await safely(ctx.sweep)();
 const t1 = setInterval(safely(ctx.sweepReservations), 30_000);
 const t2 = setInterval(safely(ctx.sweep), 3600_000);
 
-if (PROD && flag('DEV_LINKS', false)) console.warn('[warn] DEV_LINKS=1 shows password-reset links in API responses. Use only for a private local demo.');
+if (PROD && flag('DEV_RESET_LINKS', false)) console.warn('[warn] DEV_RESET_LINKS=1 shows password-reset links in API responses — anyone could reset any account. Private local demo only.');
 
 // Graceful shutdown (Docker sends SIGTERM): stop timers, close streams and the server, then the database pool.
 let stopping = false;
@@ -55,6 +58,6 @@ for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, async () => {
 
 server.listen(PORT, () => {
   console.log(`\nDara is running → http://localhost:${PORT}`);
-  console.log(`Database: ${db.dialect === 'postgres' ? 'PostgreSQL (row-level security on)' : DB_FILE}`);
+  console.log(`Database: ${db.dialect === 'postgres' ? `PostgreSQL (row-level security on; ${db.isolation.mode === 'app_role' ? `app role ${db.isolation.appRole}` : `forced on owner ${db.isolation.user}`})` : DB_FILE}`);
   if (!PROD) console.log('Demo sign-ins (synthetic data): admin@ · manager@ · lead@ · agent@dara.demo, platform@dara.demo (platform console), owner@palmcoast.demo (second brokerage) — password DaraDemo2026\n');
 });
