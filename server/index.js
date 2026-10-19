@@ -29,7 +29,9 @@ if ((process.env.SEED_ON_EMPTY ?? (PROD ? '0' : '1')) === '1' && !(await db.get(
 const { server, hub, ctx } = createApp(db, {
   sessionTtlHours: Number(process.env.SESSION_TTL_HOURS || 168),
   secureCookies: flag('COOKIE_SECURE', PROD),
-  publicUrl: process.env.PUBLIC_URL || `http://localhost:${PORT}`,
+  // GitHub Codespaces: emailed links point at the forwarded URL automatically.
+  publicUrl: process.env.PUBLIC_URL || (process.env.CODESPACE_NAME && process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN
+    ? `https://${process.env.CODESPACE_NAME}-${PORT}.${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}` : `http://localhost:${PORT}`),
   devLinks: flag('DEV_LINKS', !PROD), // verification/reset links are also shown in the UI (no email provider yet). Never on a public deployment.
   mailer: createOutbox(resolve(process.env.OUTBOX_DIR || './data/outbox')),
 });

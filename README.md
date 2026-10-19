@@ -6,6 +6,11 @@ Dara is a multi-tenant SaaS CRM for Dubai brokerages. It connects leads, listing
 
 ## Run it
 
+### Live in your browser (GitHub Codespaces)
+On the repository page: **Code → Codespaces → Create codespace on main**. It installs, seeds the synthetic demo and opens Dara on port 4310 (about 2 minutes the first time). To share the link with someone, open the **Ports** tab, right-click port 4310 → **Port visibility → Public**. The codespace stops when idle; reopening it restarts the app.
+
+### On your computer
+
 Requirements: **Node.js 22.13 or newer** (`node --version`). Get it from https://nodejs.org (LTS).
 
 ```bash

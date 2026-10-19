@@ -1,0 +1,17 @@
+{
+  "name": "Dara CRM (live demo)",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "postCreateCommand": "npm install --no-audit --no-fund",
+  "postStartCommand": "nohup npm start > /tmp/dara.log 2>&1 &",
+  "forwardPorts": [4310],
+  "portsAttributes": {
+    "4310": { "label": "Dara CRM", "onAutoForward": "openBrowser" }
+  },
+  "containerEnv": {
+    "DEV_LINKS": "1",
+    "SEED_ON_EMPTY": "1"
+  },
+  "customizations": {
+    "codespaces": { "openFiles": ["README.md"] }
+  }
+}
