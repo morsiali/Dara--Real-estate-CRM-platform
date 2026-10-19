@@ -7,7 +7,7 @@ Dara is a multi-tenant SaaS CRM for Dubai brokerages. It connects leads, listing
 ## Run it
 
 ### Public link on Render (app + PostgreSQL)
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/morsiali/Dara-CRM)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/morsiali/Dara--Real-estate-CRM-platform)
 
 Click the button (or go to Render → **New → Blueprint** and pick this repository), then click **Apply**. Render reads `render.yaml`, creates the PostgreSQL 16 database and the web service, generates `DARA_SECRET_KEY`, and loads the synthetic demo. The first build takes about 5 minutes. Your link is `https://dara-crm.onrender.com`, or a variant if that name is taken.
 - Free plans are for evaluation only: the app sleeps after 15 minutes idle (about a minute to wake) and the free database is deleted after 30 days. Upgrade both in the dashboard for real use.
