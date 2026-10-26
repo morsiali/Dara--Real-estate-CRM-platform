@@ -206,6 +206,17 @@ describe('tasks: assignment and manager review', () => {
     assert.ok(review.data.items.some((x) => x.id === t.data.item.id));
     assert.equal((await mgr.post(`/tasks/${t.data.item.id}/transition`, { action: 'approve' })).status, 200);
   });
+  test('management cannot review or earn approval points on its own task', async () => {
+    const t = await mgr.post('/tasks', { title: 'Manager self task', priority: 'high' });
+    assert.equal(t.status, 201);
+    assert.equal((await mgr.post(`/tasks/${t.data.item.id}/transition`, { action: 'submit', note: 'Done' })).status, 200);
+    assert.equal((await mgr.post(`/tasks/${t.data.item.id}/transition`, { action: 'approve' })).status, 403);
+    const review = await mgr.get('/tasks?view=review');
+    assert.ok(!review.data.items.some((x) => x.id === t.data.item.id));
+    const ledger = await env.db.all('SELECT points FROM points_ledger WHERE source_id = ?', t.data.item.id);
+    assert.equal(ledger.length, 0);
+    assert.equal((await admin.post(`/tasks/${t.data.item.id}/transition`, { action: 'approve' })).status, 200);
+  });
 });
 
 describe('calendar', () => {
