@@ -21,7 +21,7 @@ const en = {
   'me.points': 'Recent points', 'me.setGoals': 'Set goals',
   'team.title': 'Team control', 'team.sub': 'Every member’s numbers, workload and status', 'team.member': 'Member',
   'board.title': 'Leaderboard', 'board.sub': 'Points from closed deals, viewings, approved tasks and logged activity',
-  'leads.title': 'Leads', 'leads.add': 'Add lead', 'pipeline.title': 'Pipeline', 'pipeline.add': 'New deal', 'listings.title': 'Listings', 'listings.add': 'Add listing',
+  'leads.title': 'Leads', 'leads.add': 'Add lead', 'nav.assistant': 'AI follow-up', 'ai.title': 'AI follow-up desk', 'pipeline.title': 'Pipeline', 'pipeline.add': 'New deal', 'listings.title': 'Listings', 'listings.add': 'Add listing',
   'tasks.title': 'Tasks', 'tasks.add': 'Assign task', 'calendar.title': 'Calendar', 'calendar.add': 'Schedule', 'chat.title': 'Team chat',
   'time.title': 'Time insights', 'people.title': 'People & teams', 'audit.title': 'Audit log',
 };
@@ -48,7 +48,7 @@ const ar = {
   'me.points': 'أحدث النقاط', 'me.setGoals': 'تحديد الأهداف',
   'team.title': 'متابعة الفريق', 'team.sub': 'أرقام كل عضو وحجم عمله وحالته', 'team.member': 'العضو',
   'board.title': 'لوحة المتصدرين', 'board.sub': 'نقاط من الصفقات المغلقة والمعاينات والمهام المعتمدة والأنشطة المسجلة',
-  'leads.title': 'العملاء المحتملون', 'leads.add': 'إضافة عميل', 'pipeline.title': 'الصفقات', 'pipeline.add': 'صفقة جديدة', 'listings.title': 'العقارات', 'listings.add': 'إضافة عقار',
+  'leads.title': 'العملاء المحتملون', 'leads.add': 'إضافة عميل', 'nav.assistant': 'متابعة بالذكاء الاصطناعي', 'ai.title': 'مكتب المتابعة الذكي', 'pipeline.title': 'الصفقات', 'pipeline.add': 'صفقة جديدة', 'listings.title': 'العقارات', 'listings.add': 'إضافة عقار',
   'tasks.title': 'المهام', 'tasks.add': 'إسناد مهمة', 'calendar.title': 'التقويم', 'calendar.add': 'جدولة', 'chat.title': 'محادثة الفريق',
   'time.title': 'تحليل الوقت', 'people.title': 'الأفراد والفرق', 'audit.title': 'سجل التدقيق',
 };

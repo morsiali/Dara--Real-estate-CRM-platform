@@ -15,6 +15,7 @@ import { registerInsights } from './routes/insights.js';
 import { registerAdmin } from './routes/admin.js';
 import { registerSaas } from './routes/saas.js';
 import { registerInventory, sweepReservations, sweepCompliance } from './routes/inventory.js';
+import { registerAi } from './routes/ai.js';
 import { accessMode } from './services/billing.js';
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -43,6 +44,7 @@ export function createApp(db, config = {}) {
   registerAdmin(router, ctx);
   registerSaas(router, ctx);
   registerInventory(router, ctx);
+  registerAi(router, ctx);
   // Background jobs are cross-tenant system work.
   ctx.sweep = () => db.withContext({ system: true }, async () => (await sweepReservations(ctx)) + (await sweepCompliance(ctx)));
   ctx.sweepReservations = () => db.withContext({ system: true }, () => sweepReservations(ctx));
@@ -97,7 +99,8 @@ export function createApp(db, config = {}) {
       if (route.opts.stream) return route.handler(r, ctx, res); // long-lived: never hold a DB transaction open
       // One transaction per request, scoped to the caller's tenant (Postgres sets app.tenant_id for RLS).
       // `system` is reserved for explicitly marked routes (sign-in, signup, platform console) and anonymous calls.
-      const result = await db.withContext({ tenantId: user?.tenant_id ?? null, system: !!route.opts.system || !user }, () => route.handler(r, ctx, res));
+      const invoke = () => route.handler(r, ctx, res);
+      const result = route.opts.externalIo ? await invoke() : await db.withContext({ tenantId: user?.tenant_id ?? null, system: !!route.opts.system || !user }, invoke);
       if (res.headersSent) return;
       if (result && result.__status) return sendJson(res, result.__status, result.body, result.headers);
       sendJson(res, 200, result ?? { ok: true });

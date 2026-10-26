@@ -87,6 +87,7 @@ export async function lead(root, ctx) {
     const canAssign = store.perms['leads.assign'] !== 'None';
     setHeader(`${l.first_name} ${l.last_name}`, [
       h('a.btn.btn-ghost', { href: '#/leads' }, '← All leads'),
+      ['new', 'contacted', 'qualified', 'nurturing'].includes(l.status) ? h('a.btn.btn-ghost', { href: `#/assistant?lead=${encodeURIComponent(l.id)}` }, icon('layers'), 'AI follow-up') : null,
       canUpdate ? h('button.btn.btn-ghost', { onclick: () => logActivity({ lead_id: l.id }, draw) }, icon('phone'), 'Log activity') : null,
       canUpdate && NEXT_STATUS[l.status].length ? h('button.btn.btn-ghost', { onclick: () => changeStatus(l, draw) }, 'Change status') : null,
       canAssign && l.status !== 'converted' ? h('button.btn.btn-ghost', { onclick: () => reassign(store, l, draw) }, 'Reassign') : null,
