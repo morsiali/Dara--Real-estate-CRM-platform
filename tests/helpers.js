@@ -8,11 +8,11 @@ import { createOutbox } from '../server/services/mailer.js';
 export const BACKEND = process.env.DB_BACKEND || 'sqlite';
 export const openTestDb = () => (BACKEND === 'pglite' ? openDb({ pglite: true }) : openDb({ file: ':memory:' }));
 
-export async function startApp({ seeded = true } = {}) {
+export async function startApp({ seeded = true, config = {} } = {}) {
   const db = await openTestDb();
   if (seeded) await seed(db);
   const mailer = createOutbox(null);
-  const app = createApp(db, { sessionTtlHours: 1, signupsPerHour: 100, publicUrl: 'http://dara.test', devLinks: true, mailer });
+  const app = createApp(db, { sessionTtlHours: 1, signupsPerHour: 100, publicUrl: 'http://dara.test', devLinks: true, mailer, ...config });
   await new Promise((r) => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
   const close = async () => { app.hub.closeAll(); await new Promise((r) => app.server.close(r)); await db.close(); };

@@ -6,11 +6,13 @@ import { createApp } from './app.js';
 import { seed } from './seed.js';
 import { createOutbox } from './services/mailer.js';
 
-// Minimal .env loader (no dependency): KEY=VALUE lines, # comments.
-if (existsSync('.env')) {
-  for (const line of readFileSync('.env', 'utf8').split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*([^#]*?)\s*(#.*)?$/);
-    if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2];
+// Minimal local env loader (no dependency): deployment environment still takes precedence.
+for (const envFile of ['.env.local', '.env']) {
+  if (existsSync(envFile)) {
+    for (const line of readFileSync(envFile, 'utf8').split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*([^#]*?)\s*(#.*)?$/);
+      if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2];
+    }
   }
 }
 
@@ -37,6 +39,8 @@ const { server, hub, ctx } = createApp(db, {
   devLinks: flag('DEV_LINKS', !PROD),
   devResetLinks: flag('DEV_RESET_LINKS', !PROD),
   mailer: createOutbox(resolve(process.env.OUTBOX_DIR || './data/outbox')),
+  openaiApiKey: process.env.OPENAI_API_KEY || '',
+  aiModel: process.env.OPENAI_AI_MODEL || 'gpt-6-luna',
 });
 
 // Background jobs: expire reservation holds every 30 s (AC-RES-02 target ≤ 60 s); compliance reminders hourly.

@@ -1,6 +1,8 @@
 node_modules/
 data/
 .env
+.env.local
+.env.*.local
 *.db
 *.db-*
 test-results/

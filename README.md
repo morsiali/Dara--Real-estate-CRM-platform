@@ -24,8 +24,8 @@ Requirements: **Node.js 22.13 or newer** (`node --version`). Get it from https:/
 ```bash
 npm start            # http://localhost:4310 — creates ./data/dara.db and loads synthetic demo data on first run
 npm install          # once — adds the Postgres driver and the in-process Postgres used by tests (optional for SQLite-only use)
-npm test             # 110 automated tests on SQLite
-npm run test:pg      # the same suites + row-level-security tests on in-process PostgreSQL (117 tests)
+npm test             # automated tests on SQLite
+npm run test:pg      # the same suites + row-level-security tests on in-process PostgreSQL
 npm run seed         # wipe the database and reload fresh demo data (dates relative to today)
 ```
 
@@ -63,6 +63,7 @@ Demo workspaces don't force two-step sign-in, so you can click straight in. **Ne
 - **My dashboard / member dashboards:** KPIs, points trend, monthly goals (set by management), open tasks, upcoming events, points ledger and achievements. Management and team leads open any member's dashboard within their scope.
 - **Team control:** each member's points, closed volume, viewings, calls, approved and overdue tasks, items awaiting review, pipeline and online status. Columns are sortable.
 - **Leads:** capture, self/manual/round-robin assignment with history, status rules (a reason is required to disqualify), and explainable matching against verified inventory.
+- **AI follow-up desk:** ranks untouched and stale leads, then prepares a next step, an editable client message and a task for a selected lead. It never sends a message or changes a record on its own. The user reviews the task before creating it.
 - **Pipeline:** drag-and-drop kanban. Winning requires a linked listing and a value. Losing requires a reason. Only management reopens a closed deal, and must give a reason.
 - **Listings:** inventory authority (platform / external / unverified), availability confidence, verification and permit number.
 - **Tasks:** assign → start → submit with a note → approve or request changes. Points are awarded on approval, with an on-time bonus.
@@ -96,6 +97,9 @@ Copy `.env.example` to `.env`. Every setting is explained there. Main ones:
 - `DARA_SECRET_KEY` is required in production; it encrypts two-step secrets.
 - `PUBLIC_URL` is the base for emailed links.
 - `NODE_ENV=production` turns on Secure cookies and turns off the demo seed and on-screen email links.
+- `OPENAI_API_KEY` enables the AI follow-up desk. For local use, place it in ignored `.env.local`; for Render, add it as a secret environment variable on the `dara-crm` web service and redeploy. Do not put a key in Git or client-side code. The default model is `gpt-6-luna` (override with `OPENAI_AI_MODEL`).
+
+The follow-up queue works without a key. Clicking **Prepare follow-up** sends the selected lead's first name, requirements, notes, recent activity, open tasks and up to three verified listing matches to OpenAI. Email addresses and phone numbers are not included as separate fields. The API request sets `store: false`. Plans are limited to 30 successful generations per user per rolling day and are recorded in the audit log. Review the draft and verify listing facts before contacting a client.
 
 ## Honest status
 This is a working product on **synthetic data**, verified locally and against a real PostgreSQL 16 server (see `docs/CAPABILITIES.md`). Before selling it still needs:

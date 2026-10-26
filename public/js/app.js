@@ -24,6 +24,7 @@ const NAV = [
   ] },
   { group: 'nav.sales', items: [
     { route: 'leads', icon: 'lead', key: 'nav.leads' },
+    { route: 'assistant', icon: 'layers', key: 'nav.assistant' },
     { route: 'pipeline', icon: 'pipeline', key: 'nav.pipeline' },
     { route: 'listings', icon: 'building', key: 'nav.listings' },
     { route: 'projects', icon: 'tower', key: 'nav.projects' },
