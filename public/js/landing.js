@@ -69,7 +69,8 @@ const nf = (n, d = 0) => Number(n).toLocaleString('en-US', { maximumFractionDigi
 function aed(v) { return v >= 1e6 ? `AED ${nf(v / 1e6, 1)}M` : `AED ${nf(v / 1e3)}K`; }
 function calc() {
   const months = +$('#c-months').value, seats = +$('#c-seats').value;
-  const leads = Math.max(0, +$('#c-leads').value || 0), conv = Math.max(0, +$('#c-conv').value || 0), value = Math.max(0, +$('#c-value').value || 0), comm = Math.max(0, +$('#c-comm').value || 0);
+  const bounded = (id) => { const el = $(id); const n = Number(el.value); return Math.min(Number(el.max || Infinity), Math.max(Number(el.min || 0), Number.isFinite(n) ? n : 0)); };
+  const leads = bounded('#c-leads'), conv = bounded('#c-conv'), value = bounded('#c-value'), comm = bounded('#c-comm');
   const deals = Math.round(seats * months * leads * (conv / 100));
   $('#o-months').textContent = `${months} month${months > 1 ? 's' : ''}`;
   $('#o-seats').textContent = `${seats} agents`;
@@ -77,7 +78,14 @@ function calc() {
   $('#o-comm').textContent = aed(deals * value * (comm / 100));
   $('#o-formula').textContent = `${seats} seats × ${months} months × ${nf(leads)} leads × ${nf(conv, 1)}% conversion = ${nf(deals)} deals; × AED ${nf(value)} × ${nf(comm, 2)}% commission`;
 }
-for (const id of ['#c-months', '#c-seats', '#c-leads', '#c-conv', '#c-value', '#c-comm']) $(id)?.addEventListener('input', calc);
+for (const id of ['#c-months', '#c-seats', '#c-leads', '#c-conv', '#c-value', '#c-comm']) $(id)?.addEventListener('input', (e) => {
+  if (e.target.type === 'number' && e.target.value !== '' && Number.isFinite(Number(e.target.value))) {
+    const bounded = Math.min(Number(e.target.max || Infinity), Math.max(Number(e.target.min || 0), Number(e.target.value)));
+    if (bounded !== Number(e.target.value)) e.target.value = String(bounded);
+  }
+  calc();
+});
+for (const id of ['#c-leads', '#c-conv', '#c-value', '#c-comm']) $(id)?.addEventListener('change', (e) => { e.target.value = String(Math.min(Number(e.target.max || Infinity), Math.max(Number(e.target.min || 0), Number(e.target.value) || 0))); calc(); });
 if ($('#c-months')) calc();
 
 /* ---------- Sign in ---------- */
@@ -229,7 +237,7 @@ trial?.addEventListener('submit', async (e) => {
   const body = Object.fromEntries(['company', 'name', 'email', 'password', 'trade_licence_no', 'orn'].map((k) => [k, trial.elements[k].value.trim() || undefined]));
   body.accept_terms = $('#t-terms').checked;
   if (!body.company || !body.name || !body.email || !body.password) { msg.textContent = 'Fill in brokerage, name, email and password.'; return; }
-  if (!body.accept_terms) { msg.textContent = 'Accept the trial terms to continue.'; return; }
+  if (!body.accept_terms) { msg.textContent = 'Confirm that you are authorised to register this brokerage.'; return; }
   b.disabled = true; b.textContent = 'Creating your workspace…'; msg.textContent = '';
   try {
     const res = await fetch('/api/signup', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'dara' }, body: JSON.stringify(body), credentials: 'same-origin' });

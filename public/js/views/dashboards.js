@@ -9,6 +9,12 @@ const STAGES = ['new', 'viewing', 'offer', 'negotiation', 'reservation'];
 const fmtM = (v) => money(v);
 
 function periodLabel(r) { return r ? `${shortDate(r.start)} – ${shortDate(new Date(Date.parse(r.end) - 1000).toISOString())}` : ''; }
+function memberName(store, r, cls = '') {
+  const scope = store.perms['dashboard.member'];
+  const allowed = scope === 'Tenant' || r.id === store.me.id || (scope === 'Team' && !!r.team_id && r.team_id === store.me.team_id);
+  const content = [h('strong', r.name), h('small', r.team_name || '')];
+  return allowed ? h('a', { class: cls, href: `#/member/${r.id}` }, content) : h('span', { class: cls }, content);
+}
 
 /* ================= Main dashboard ================= */
 export async function home(root, ctx) {
@@ -34,7 +40,7 @@ export async function home(root, ctx) {
           { cls: 'span-2', sub: 'Logged calls, messages and completed calendar events' }),
         panel(t('home.top'), d.leaderboard.some((r) => r.points > 0) ? h('div',
           h('ol.mini-board', d.leaderboard.filter((r) => r.points > 0).map((r) => h('li', h('span.rank', `${r.rank}`), avatar(r.name, r.color, { size: 30, online: d.online.includes(r.id) }),
-            h('a', { href: `#/member/${r.id}` }, h('strong', r.name), h('small', r.team_name || '')), h('span.pts', `${num(r.points)} pts`)))),
+            memberName(store, r), h('span.pts', `${num(r.points)} pts`)))),
           myRank ? h('p.my-rank', `${t('home.rank')}: #${myRank.rank} of ${d.field_size} · ${num(myRank.points)} pts`) : null,
           h('a.link', { href: '#/leaderboard' }, t('common.viewAll'))) : empty('No scores yet', 'Points appear as the team closes deals and completes viewings.'), { cls: 'span-1' }),
         panel('Closed volume', barChart({ labels: d.series.labels, values: d.series.won_volume, format: fmtM, name: 'Closed volume', color: SERIES[0], ariaLabel: 'Closed volume by period bucket' }), { cls: 'span-2' }),
@@ -181,7 +187,7 @@ export async function leaderboard(root, ctx) {
         panel('Standings', h('div.table-wrap', h('table.data',
           h('thead', h('tr', ['#', 'Member', 'Points', 'Closed', 'Won', 'Viewings', 'Tasks', 'Calls', 'Badges'].map((x) => h('th', { scope: 'col' }, x)))),
           h('tbody', items.map((r) => h('tr', { class: r.id === store.me.id ? 'me-row' : '' },
-            h('td.num', String(r.rank)), h('td', h('a.person', { href: `#/member/${r.id}` }, avatar(r.name, r.color, { size: 28 }), h('span', h('strong', r.name), h('small', r.team_name || '')))),
+            h('td.num', String(r.rank)), h('td', h('span.person', avatar(r.name, r.color, { size: 28 }), memberName(store, r))),
             h('td.num.strong', num(r.points)), h('td.num', money(r.won_volume)), h('td.num', num(r.deals_won)), h('td.num', num(r.viewings_done)), h('td.num', num(r.tasks_approved)), h('td.num', num(r.calls_logged)), h('td.num', num(r.badges)))))))),
         h('div.two-col',
           panel('How points are earned', h('ul.rules',

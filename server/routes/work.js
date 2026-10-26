@@ -22,7 +22,7 @@ export function registerWork(router, ctx) {
     if (!t || !(await canOnOwner(db, user, 'tasks.read', t.assignee_id) || t.creator_id === user.id)) throw notFound('Task');
     return t;
   };
-  const reviewerOf = async (user, t) => (user.id !== t.assignee_id || isManagement(user)) && await canOnOwner(db, user, 'tasks.review', t.assignee_id);
+  const reviewerOf = async (user, t) => user.id !== t.assignee_id && await canOnOwner(db, user, 'tasks.review', t.assignee_id);
   const decorate = async (user, t) => ({ ...t, can_review: await reviewerOf(user, t), is_assignee: t.assignee_id === user.id, overdue: !!(t.due_at && t.due_at < nowIso() && ['todo', 'in_progress', 'changes_requested'].includes(t.status)) });
 
   router.get('/api/tasks', async (req) => {
@@ -32,7 +32,7 @@ export function registerWork(router, ctx) {
     else if (view === 'created') { where = 't.creator_id = ? AND t.assignee_id != ?'; params = [u.id, u.id]; }
     else if (view === 'review') {
       const f = await ownerFilter(db, u, 'tasks.review', 't.assignee_id');
-      where = `t.status = 'submitted' AND ${f.sql}` + (isManagement(u) ? '' : ' AND t.assignee_id != ?'); params = [...f.params, ...(isManagement(u) ? [] : [u.id])];
+      where = `t.status = 'submitted' AND ${f.sql} AND t.assignee_id != ?`; params = [...f.params, u.id];
     } else { const f = await ownerFilter(db, u, 'tasks.read', 't.assignee_id'); where = f.sql; params = f.params; }
     if (req.query.status) { where += ' AND t.status = ?'; params.push(req.query.status); }
     if (req.query.assignee) { where += ' AND t.assignee_id = ?'; params.push(req.query.assignee); }

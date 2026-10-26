@@ -46,7 +46,7 @@ export function registerSaas(router, ctx) {
       .str('password', { required: true, max: 200 }).str('trade_licence_no', { max: 60 }).str('orn', { max: 40 }).bool('accept_terms').done();
     if (!EMAIL.test(v.email)) throw badRequest('Email address looks wrong.', { email: 'is not a valid email' });
     if (!passwordPolicy(v.password)) throw badRequest('Use at least 10 characters with letters and numbers.', { password: 'is too weak' });
-    if (!v.accept_terms) throw badRequest('Accept the terms to create a workspace.', { accept_terms: 'is required' });
+    if (!v.accept_terms) throw badRequest('Confirm that you are authorised to register this brokerage.', { accept_terms: 'is required' });
     if (await db.get('SELECT id FROM users WHERE lower(email) = lower(?)', v.email)) throw conflict('EMAIL_TAKEN', 'An account with this email already exists. Sign in instead.', { email: 'already registered' });
     signupThrottle.fail(req.ip, 'signup');
     const { tenantId, userId } = await createWorkspace(db, v);

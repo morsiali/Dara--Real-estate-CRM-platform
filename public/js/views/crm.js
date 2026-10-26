@@ -30,16 +30,16 @@ export async function leads(root, ctx) {
   const draw = () => {
     mount(statusBar, segmented([['', t('common.all')], ...LEAD_STATUSES.map((s) => [s, label(s)])], status, (s) => { status = s; draw(); }, 'Lead status'), search, ownerSel);
     const qs = new URLSearchParams({ ...(status && { status }), ...(q && { q }), ...(owner && { owner }) });
-    load(listEl, () => get(`/leads?${qs}`), (d) => d.items.length ? h('div.table-wrap', h('table.data.clickable',
+    load(listEl, () => get(`/leads?${qs}`), (d) => d.items.length ? h('div.table-wrap', h('table.data.clickable.lead-table',
       h('thead', h('tr', ['Lead', 'Status', 'Looking for', 'Budget', 'Source', 'Owner', 'Created'].map((x) => h('th', { scope: 'col' }, x)))),
       h('tbody', d.items.map((l) => h('tr', { tabindex: '0', onclick: () => go(`#/lead/${l.id}`), onkeydown: (e) => { if (e.key === 'Enter') go(`#/lead/${l.id}`); } },
         h('td', h('strong', `${l.first_name} ${l.last_name}`), h('small.block', l.phone || l.email || '')),
-        h('td', badge(l.status)),
-        h('td', `${l.transaction_type === 'rent' ? 'Rent' : 'Buy'} · ${l.property_types.map(label).join(', ') || 'Any type'}${l.locations.length ? ' · ' + l.locations.join(', ') : ''}${l.bedrooms_min != null ? ` · ${l.bedrooms_min}+ bd` : ''}`),
-        h('td.num', l.budget_max ? money(l.budget_max) : '—'),
-        h('td', label(l.source)),
-        h('td', l.owner_name ? h('span.person-sm', avatar(l.owner_name, l.owner_color, { size: 22 }), l.owner_name) : 'Unassigned'),
-        h('td', ago(l.created_at))))))) : empty(q || status ? 'No leads match these filters' : 'No leads yet', 'Add a lead or wait for new enquiries to be assigned to you.',
+        h('td', { 'data-label': 'Status' }, badge(l.status)),
+        h('td', { 'data-label': 'Looking for' }, `${l.transaction_type === 'rent' ? 'Rent' : 'Buy'} · ${l.property_types.map(label).join(', ') || 'Any type'}${l.locations.length ? ' · ' + l.locations.join(', ') : ''}${l.bedrooms_min != null ? ` · ${l.bedrooms_min}+ bd` : ''}`),
+        h('td.num', { 'data-label': 'Budget' }, l.budget_max ? money(l.budget_max) : '—'),
+        h('td', { 'data-label': 'Source' }, label(l.source)),
+        h('td', { 'data-label': 'Owner' }, l.owner_name ? h('span.person-sm', avatar(l.owner_name, l.owner_color, { size: 22 }), l.owner_name) : 'Unassigned'),
+        h('td', { 'data-label': 'Created' }, ago(l.created_at))))))) : empty(q || status ? 'No leads match these filters' : 'No leads yet', 'Add a lead or wait for new enquiries to be assigned to you.',
         h('button.btn.btn-primary', { onclick: () => addLead(store, (id) => go(`#/lead/${id}`)) }, t('leads.add'))));
   };
   mount(root, h('div.stack', statusBar, listEl));
